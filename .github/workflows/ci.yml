@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build release app
+        run: ./scripts/build-app.sh
+      - name: Verify signature
+        run: codesign --verify --deep --strict "build/Traffic Lights Plus.app"
