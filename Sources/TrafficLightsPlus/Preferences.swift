@@ -16,6 +16,7 @@ final class Preferences: ObservableObject {
     private enum Key {
         static let enabled = "enabled"
         static let size = "controlSize"
+        static let spacing = "controlSpacingAdjustment"
         static let style = "controlStyle"
         static let showInFullScreen = "showInFullScreen"
         static let closeBehavior = "closeButtonBehavior"
@@ -31,6 +32,10 @@ final class Preferences: ObservableObject {
 
     @Published var size: Double {
         didSet { defaults.set(size, forKey: Key.size) }
+    }
+
+    @Published var spacing: Double {
+        didSet { defaults.set(spacing, forKey: Key.spacing) }
     }
 
     @Published var style: ControlStyle {
@@ -58,6 +63,7 @@ final class Preferences: ObservableObject {
         defaults.register(defaults: [
             Key.enabled: true,
             Key.size: 28.0,
+            Key.spacing: 0.0,
             Key.style: ControlStyle.macOS.rawValue,
             Key.showInFullScreen: false,
             Key.closeBehavior: ButtonBehavior.closeWindow.rawValue,
@@ -66,6 +72,10 @@ final class Preferences: ObservableObject {
         ])
         enabled = defaults.bool(forKey: Key.enabled)
         size = min(max(defaults.double(forKey: Key.size), ControlLayout.sizeRange.lowerBound), ControlLayout.sizeRange.upperBound)
+        spacing = min(
+            max(defaults.double(forKey: Key.spacing), ControlLayout.spacingAdjustmentRange.lowerBound),
+            ControlLayout.spacingAdjustmentRange.upperBound
+        )
         style = ControlStyle(rawValue: defaults.string(forKey: Key.style) ?? "") ?? .macOS
         showInFullScreen = defaults.bool(forKey: Key.showInFullScreen)
         closeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.closeBehavior) ?? "") ?? .closeWindow

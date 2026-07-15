@@ -11,6 +11,7 @@ import Testing
 
     #expect(panel.overlayView.frame.origin == .zero)
     #expect(panel.overlayView.frame.size == NSSize(width: 40, height: 40))
+    #expect(panel.level == .normal)
 }
 
 @MainActor

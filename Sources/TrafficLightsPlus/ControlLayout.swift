@@ -2,9 +2,29 @@ import CoreGraphics
 
 struct ControlLayout {
     static let sizeRange = 18.0...48.0
+    static let spacingAdjustmentRange = -8.0...32.0
 
     static func effectiveSize(preferred: Double) -> CGFloat {
         CGFloat(min(max(preferred, sizeRange.lowerBound), sizeRange.upperBound))
+    }
+
+    static func effectiveSpacingAdjustment(preferred: Double) -> CGFloat {
+        CGFloat(min(
+            max(preferred, spacingAdjustmentRange.lowerBound),
+            spacingAdjustmentRange.upperBound
+        ))
+    }
+
+    static func centerByAdjustingSystemSpacing(
+        _ nativeCenter: CGPoint,
+        action: WindowAction,
+        adjustment: CGFloat
+    ) -> CGPoint {
+        let index = displayOrder(for: .macOS).firstIndex(of: action) ?? 0
+        return CGPoint(
+            x: nativeCenter.x + CGFloat(index) * adjustment,
+            y: nativeCenter.y
+        )
     }
 
     static func frameCentered(on nativeFrame: CGRect, controlSize: CGFloat) -> CGRect {
@@ -50,12 +70,4 @@ struct ControlLayout {
         [.close, .minimize, .zoom]
     }
 
-    static func unobscuredActions(
-        controlFrames: [WindowAction: CGRect],
-        coveringFrames: [CGRect]
-    ) -> Set<WindowAction> {
-        Set(controlFrames.compactMap { action, frame in
-            coveringFrames.contains(where: { $0.intersects(frame) }) ? nil : action
-        })
-    }
 }

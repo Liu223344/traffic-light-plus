@@ -14,6 +14,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         let preferences = Preferences(defaults: defaults)
         #expect(preferences.enabled)
         #expect(preferences.size == 28)
+        #expect(preferences.spacing == 0)
         #expect(preferences.style == .macOS)
         #expect(!preferences.showInFullScreen)
         #expect(preferences.closeBehavior == .closeWindow)
@@ -27,6 +28,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         let preferences = Preferences(defaults: defaults)
         preferences.enabled = false
         preferences.size = 42
+        preferences.spacing = 12
         preferences.style = .edgeSquares
         preferences.showInFullScreen = true
         preferences.closeBehavior = .quitApplication
@@ -36,6 +38,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         let restored = Preferences(defaults: defaults)
         #expect(!restored.enabled)
         #expect(restored.size == 42)
+        #expect(restored.spacing == 12)
         #expect(restored.style == .edgeSquares)
         #expect(restored.showInFullScreen)
         #expect(restored.closeBehavior == .quitApplication)
@@ -71,5 +74,15 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
 
         defaults.set(-20, forKey: "controlSize")
         #expect(Preferences(defaults: defaults).size == 18)
+    }
+}
+
+@Test func corruptStoredSpacingIsClamped() {
+    withDefaults { defaults in
+        defaults.set(500, forKey: "controlSpacingAdjustment")
+        #expect(Preferences(defaults: defaults).spacing == 32)
+
+        defaults.set(-500, forKey: "controlSpacingAdjustment")
+        #expect(Preferences(defaults: defaults).spacing == -8)
     }
 }

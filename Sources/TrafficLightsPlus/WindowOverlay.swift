@@ -107,7 +107,12 @@ final class WindowOverlay {
                     )
                 }
                 if let offset = nativeCenterOffsets[action] {
-                    let center = CGPoint(x: frame.minX + offset.x, y: frame.minY + offset.y)
+                    let nativeCenter = CGPoint(x: frame.minX + offset.x, y: frame.minY + offset.y)
+                    let center = ControlLayout.centerByAdjustingSystemSpacing(
+                        nativeCenter,
+                        action: action,
+                        adjustment: ControlLayout.effectiveSpacingAdjustment(preferred: preferences.spacing)
+                    )
                     frames[action] = CGRect(
                         x: center.x - controlSize / 2,
                         y: center.y - controlSize / 2,
@@ -163,7 +168,9 @@ final class WindowOverlay {
     }
 
     func bind(to windowID: CGWindowID) {
+        let changed = cgWindowID != windowID
         cgWindowID = windowID
+        if changed { refreshStackingOrder() }
     }
 
     var controlFrames: [WindowAction: CGRect] {
@@ -181,7 +188,12 @@ final class WindowOverlay {
             hide()
             return
         }
-        if anchorPanel.frame.origin != anchorOrigin {
+        let movedThroughWindowServer = anchorPanel.isVisible
+            && WindowServerBridge.shared.moveWindowGroup(
+                anchorPanel,
+                toCGOrigin: currentWindowFrame.origin
+            )
+        if !movedThroughWindowServer, anchorPanel.frame.origin != anchorOrigin {
             anchorPanel.setFrameOrigin(anchorOrigin)
         }
 
@@ -208,14 +220,12 @@ final class WindowOverlay {
 
         if nextActions.isEmpty {
             if anchorPanel.isVisible { anchorPanel.orderOut(nil) }
-        } else if !anchorPanel.isVisible {
-            anchorPanel.orderFrontRegardless()
         }
 
         for action in WindowAction.allCases {
             guard let panel = panels[action] else { continue }
             if nextActions.contains(action) {
-                panel.orderFrontRegardless()
+                continue
             } else {
                 panel.overlayView.resetInteractionState()
                 if panel.isVisible { panel.orderOut(nil) }
@@ -225,6 +235,24 @@ final class WindowOverlay {
         if nextActions.isEmpty {
             hoverResetWorkItem?.cancel()
             hoverResetWorkItem = nil
+        } else {
+            refreshStackingOrder()
+        }
+    }
+
+    func refreshStackingOrder() {
+        guard !visibleActions.isEmpty, let cgWindowID else { return }
+        anchorPanel.orderFrontRegardless()
+        for action in WindowAction.allCases where visibleActions.contains(action) {
+            panels[action]?.orderFrontRegardless()
+        }
+
+        let bridge = WindowServerBridge.shared
+        _ = bridge.order(anchorPanel, directlyAbove: cgWindowID)
+
+        for action in WindowAction.allCases where visibleActions.contains(action) {
+            guard let panel = panels[action] else { continue }
+            _ = bridge.order(panel, directlyAbove: cgWindowID)
         }
     }
 
@@ -232,8 +260,10 @@ final class WindowOverlay {
         guard !visibleActions.isEmpty else { return }
         var pointerInsideGroup = false
         for action in visibleActions {
-            guard let panel = panels[action] else { continue }
-            let pointerInsideButton = panel.frame.contains(mouseLocation)
+            guard let panel = panels[action],
+                  let cgFrame = preparedCGFrames[action],
+                  let origin = appKitOrigin(forCGPoint: cgFrame.origin, size: cgFrame.size) else { continue }
+            let pointerInsideButton = CGRect(origin: origin, size: cgFrame.size).contains(mouseLocation)
             panel.overlayView.setPointerInside(pointerInsideButton)
             pointerInsideGroup = pointerInsideGroup || pointerInsideButton
         }

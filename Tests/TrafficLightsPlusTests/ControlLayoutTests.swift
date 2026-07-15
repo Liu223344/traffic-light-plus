@@ -17,20 +17,24 @@ import Testing
     #expect(enlarged.midY == native.midY)
 }
 
-@Test func occlusionHidesOnlyTheCoveredTrafficLight() {
-    let frames: [WindowAction: CGRect] = [
-        .close: CGRect(x: 100, y: 100, width: 30, height: 30),
-        .minimize: CGRect(x: 138, y: 100, width: 30, height: 30),
-        .zoom: CGRect(x: 176, y: 100, width: 30, height: 30)
-    ]
-    let foregroundWindow = CGRect(x: 190, y: 80, width: 500, height: 500)
+@Test func spacingAdjustmentKeepsCloseCenteredAndMovesFollowingButtons() {
+    let nativeCenter = CGPoint(x: 100, y: 20)
 
-    let visible = ControlLayout.unobscuredActions(
-        controlFrames: frames,
-        coveringFrames: [foregroundWindow]
-    )
-
-    #expect(visible == Set([.close, .minimize]))
+    #expect(ControlLayout.centerByAdjustingSystemSpacing(
+        nativeCenter,
+        action: .close,
+        adjustment: 6
+    ) == nativeCenter)
+    #expect(ControlLayout.centerByAdjustingSystemSpacing(
+        nativeCenter,
+        action: .minimize,
+        adjustment: 6
+    ) == CGPoint(x: 106, y: 20))
+    #expect(ControlLayout.centerByAdjustingSystemSpacing(
+        nativeCenter,
+        action: .zoom,
+        adjustment: 6
+    ) == CGPoint(x: 112, y: 20))
 }
 
 @Test func macOSFramesHaveDraggableGaps() throws {

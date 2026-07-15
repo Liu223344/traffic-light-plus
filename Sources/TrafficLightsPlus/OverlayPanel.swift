@@ -221,7 +221,7 @@ final class OverlayPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
-        level = .floating
+        level = .normal
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
@@ -242,7 +242,7 @@ final class OverlayAnchorPanel: NSPanel {
         isOpaque = false
         hasShadow = false
         ignoresMouseEvents = true
-        level = .floating
+        level = .normal
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true

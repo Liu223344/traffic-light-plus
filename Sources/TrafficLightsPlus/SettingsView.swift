@@ -6,16 +6,18 @@ struct SettingsView: View {
     @State private var accessibilityGranted = AXIsProcessTrusted()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            Divider()
-            preview
-            controls
-            Divider()
-            permissionStatus
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                Divider()
+                preview
+                controls
+                Divider()
+                permissionStatus
+            }
+            .padding(24)
         }
-        .padding(24)
-        .frame(width: 480)
+        .frame(width: 480, height: 680)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             accessibilityGranted = AXIsProcessTrusted()
         }
@@ -66,7 +68,9 @@ struct SettingsView: View {
 
     private var previewButtons: some View {
         let size = CGFloat(preferences.size)
-        let spacing: CGFloat = preferences.style == .macOS ? 8 : 0
+        let spacing: CGFloat = preferences.style == .macOS
+            ? max(-size + 4, 8 + CGFloat(preferences.spacing))
+            : 0
         return HStack(spacing: spacing) {
             PreviewControl(
                 action: .close,
@@ -130,6 +134,35 @@ struct SettingsView: View {
                 }
             }
 
+            if preferences.style == .macOS {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("按钮间距")
+                            .font(.headline)
+                        Spacer()
+                        Text(spacingDescription)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Button("恢复系统间距") { preferences.spacing = 0 }
+                            .buttonStyle(.link)
+                    }
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.left.and.right")
+                            .foregroundStyle(.secondary)
+                        Slider(
+                            value: $preferences.spacing,
+                            in: ControlLayout.spacingAdjustmentRange,
+                            step: 1
+                        )
+                        .accessibilityLabel("按钮间距")
+                        .accessibilityValue(spacingDescription)
+                        Image(systemName: "arrow.left.and.right")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             Toggle("在全屏窗口中显示", isOn: $preferences.showInFullScreen)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -157,6 +190,12 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+
+    private var spacingDescription: String {
+        let spacing = Int(preferences.spacing)
+        if spacing == 0 { return "系统" }
+        return spacing > 0 ? "+\(spacing) pt" : "\(spacing) pt"
     }
 
     private func behaviorRow(

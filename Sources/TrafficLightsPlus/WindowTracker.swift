@@ -58,6 +58,7 @@ final class WindowTracker {
     private var trackingCadence = TrackingCadence()
     private var trackingActivity: NSObjectProtocol?
     private var trackingActivityEndWorkItem: DispatchWorkItem?
+    private var globalMouseMonitor: Any?
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -87,12 +88,22 @@ final class WindowTracker {
         positionTimer.tolerance = 0
         self.positionTimer = positionTimer
         RunLoop.main.add(positionTimer, forMode: .common)
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: .leftMouseDown
+        ) { [weak self] _ in
+            if Thread.isMainThread {
+                self?.handleGlobalMouseDown()
+            } else {
+                DispatchQueue.main.async { self?.handleGlobalMouseDown() }
+            }
+        }
         refreshAll()
     }
 
     deinit {
         timer?.invalidate()
         positionTimer?.invalidate()
+        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
         trackingActivityEndWorkItem?.cancel()
         endTrackingActivity()
         let center = NSWorkspace.shared.notificationCenter
@@ -217,14 +228,29 @@ final class WindowTracker {
                 reason: "Keep traffic-light overlays synchronized during window movement"
             )
         }
+        scheduleTrackingActivityEndIfNeeded()
+    }
 
-        trackingActivityEndWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in self?.endTrackingActivity() }
+    private func scheduleTrackingActivityEndIfNeeded() {
+        guard trackingActivityEndWorkItem == nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let delay = max(0.05, trackingCadence.highFrequencyUntil - now + 0.05)
+        let workItem = DispatchWorkItem { [weak self] in self?.finishTrackingActivityIfIdle() }
         trackingActivityEndWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + TrackingCadence.activeDuration + 0.05,
-            execute: workItem
-        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func finishTrackingActivityIfIdle() {
+        trackingActivityEndWorkItem = nil
+        if trackingCadence.isHighFrequency(now: ProcessInfo.processInfo.systemUptime) {
+            scheduleTrackingActivityEndIfNeeded()
+        } else {
+            endTrackingActivity()
+        }
+    }
+
+    private func handleGlobalMouseDown() {
+        boostTracking()
     }
 
     private func endTrackingActivity() {
@@ -266,7 +292,6 @@ final class WindowTracker {
 
     private func refreshVisibility() {
         let records = cgWindowRecords()
-        let ownPID = ProcessInfo.processInfo.processIdentifier
         var shown = 0
 
         for overlay in overlays.values {
@@ -277,14 +302,9 @@ final class WindowTracker {
             }
             overlay.bind(to: records[targetIndex].id)
             overlay.syncPosition(to: records[targetIndex].bounds)
-            let visibleActions = unobscuredActions(
-                for: overlay,
-                above: targetIndex,
-                in: records,
-                ownPID: ownPID
-            )
-            overlay.setVisibleActions(visibleActions)
-            if !visibleActions.isEmpty { shown += 1 }
+            overlay.setVisible(true)
+            overlay.refreshStackingOrder()
+            shown += 1
         }
         logger.debug("Visible overlays: \(shown, privacy: .public) / \(self.overlays.count, privacy: .public)")
     }
@@ -295,7 +315,6 @@ final class WindowTracker {
         guard trackingCadence.shouldSync(now: now, force: force) else { return }
         let records = cgWindowRecords()
         let indicesByID = Dictionary(uniqueKeysWithValues: records.enumerated().map { ($0.element.id, $0.offset) })
-        let ownPID = ProcessInfo.processInfo.processIdentifier
         let mouseLocation = NSEvent.mouseLocation
 
         for overlay in overlays.values {
@@ -303,9 +322,9 @@ final class WindowTracker {
             if let windowID = overlay.cgWindowID {
                 targetIndex = indicesByID[windowID]
                 if targetIndex == nil {
-                    // A stale overlay is more visible than a one-frame hide while
-                    // WindowServer replaces or removes a window record.
-                    overlay.setVisible(false)
+                    // WindowServer can omit a moving window for one compositor frame.
+                    // Preserve the last overlay position instead of flashing back
+                    // to the original small controls.
                     continue
                 }
             } else {
@@ -316,30 +335,9 @@ final class WindowTracker {
             let record = records[targetIndex]
             overlay.bind(to: record.id)
             overlay.syncPosition(to: record.bounds)
-
-            overlay.setVisibleActions(unobscuredActions(
-                for: overlay,
-                above: targetIndex,
-                in: records,
-                ownPID: ownPID
-            ))
+            overlay.setVisible(true)
             overlay.reconcileHoverState(mouseLocation: mouseLocation)
         }
-    }
-
-    private func unobscuredActions(
-        for overlay: WindowOverlay,
-        above targetIndex: Int,
-        in records: [CGWindowRecord],
-        ownPID: pid_t
-    ) -> Set<WindowAction> {
-        let coveringFrames = records[..<targetIndex]
-            .filter { $0.pid != ownPID }
-            .map(\.bounds)
-        return ControlLayout.unobscuredActions(
-            controlFrames: overlay.controlFrames,
-            coveringFrames: coveringFrames
-        )
     }
 
     private func matchingRecordIndex(for overlay: WindowOverlay, in records: [CGWindowRecord]) -> Int? {
@@ -364,8 +362,10 @@ final class WindowTracker {
     }
 
     private func cgWindowRecords() -> [CGWindowRecord] {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] else { return [] }
+        guard let list = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return [] }
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
                   let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
