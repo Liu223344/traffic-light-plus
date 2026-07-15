@@ -74,7 +74,9 @@ final class WindowTracker {
             })
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in self?.refreshAll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
+            self?.refreshAllIfIdle()
+        }
         // The timer matches the active tracking rate. TrackingCadence skips most
         // callbacks while idle, so 240 Hz is used only around moves and resizes.
         positionTimer = Timer(timeInterval: TrackingCadence.activeInterval, repeats: true) { [weak self] _ in
@@ -137,6 +139,12 @@ final class WindowTracker {
         let appNames = runningApps.compactMap(\.localizedName).sorted().joined(separator: ",")
         reportScan("apps=[\(appNames)] windows=\(seenWindows.count) overlays=\(overlays.count)")
         refreshVisibility()
+    }
+
+    private func refreshAllIfIdle() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard !trackingCadence.isHighFrequency(now: now) else { return }
+        refreshAll()
     }
 
     fileprivate func handleAccessibilityNotification(element: AXUIElement, notification: String) {

@@ -172,7 +172,7 @@ final class WindowOverlay {
             preparedCGFrames[action] = cgFrame
             guard let origin = appKitOrigin(forCGPoint: cgFrame.origin, size: cgFrame.size) else { continue }
             let newFrame = NSRect(origin: origin, size: cgFrame.size)
-            if panel.frame != newFrame { panel.setFrame(newFrame, display: true) }
+            if panel.frame != newFrame { panel.setFrame(newFrame, display: false) }
         }
     }
 

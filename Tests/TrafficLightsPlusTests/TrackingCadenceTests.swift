@@ -12,6 +12,8 @@ import Testing
     #expect(nextIdle)
 
     cadence.boost(now: 2.0)
+    #expect(cadence.isHighFrequency(now: 2.1))
+    #expect(!cadence.isHighFrequency(now: 2.36))
     let firstActive = cadence.shouldSync(now: 2.0)
     let earlyActive = cadence.shouldSync(now: 2.002)
     let nextActive = cadence.shouldSync(now: 2.005)

@@ -12,6 +12,10 @@ struct TrackingCadence {
         highFrequencyUntil = max(highFrequencyUntil, now + Self.activeDuration)
     }
 
+    func isHighFrequency(now: TimeInterval) -> Bool {
+        now < highFrequencyUntil
+    }
+
     mutating func shouldSync(now: TimeInterval, force: Bool = false) -> Bool {
         let interval = now < highFrequencyUntil ? Self.activeInterval : Self.idleInterval
         guard force || now - lastSync >= interval else { return false }
