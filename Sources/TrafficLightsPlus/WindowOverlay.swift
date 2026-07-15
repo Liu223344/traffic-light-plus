@@ -33,9 +33,6 @@ final class WindowOverlay {
     private var configuredBehaviors: [WindowAction: ButtonBehavior] = [:]
     private(set) var isSuppressed = false
     private var isEligibleForDisplay = true
-    private var fastDragGuard = FastDragGuard()
-    private var hidesDuringFastDrag = true
-    private(set) var isFastDragSuppressed = false
     private var lastDiagnostic = ""
     private var hoverResetWorkItem: DispatchWorkItem?
 
@@ -70,11 +67,6 @@ final class WindowOverlay {
         }
 
         isEligibleForDisplay = true
-        hidesDuringFastDrag = preferences.hideDuringFastDrag
-        if !hidesDuringFastDrag {
-            fastDragGuard.reset()
-            isFastDragSuppressed = false
-        }
 
         windowFrame = frame
         title = copyAttribute(kAXTitleAttribute as CFString, from: window) ?? ""
@@ -164,23 +156,11 @@ final class WindowOverlay {
         preparedCGFrames
     }
 
-    func syncPosition(
-        to currentWindowFrame: CGRect,
-        now: TimeInterval = ProcessInfo.processInfo.systemUptime
-    ) {
+    func syncPosition(to currentWindowFrame: CGRect) {
         let delta = CGPoint(
             x: currentWindowFrame.minX - windowFrame.minX,
             y: currentWindowFrame.minY - windowFrame.minY
         )
-        let wasFastDragSuppressed = isFastDragSuppressed
-        isFastDragSuppressed = fastDragGuard.observe(
-            delta: delta,
-            now: now,
-            enabled: hidesDuringFastDrag
-        )
-        if isFastDragSuppressed && !wasFastDragSuppressed {
-            hide()
-        }
         guard abs(delta.x) > 0.01 || abs(delta.y) > 0.01 else { return }
 
         windowFrame.origin = currentWindowFrame.origin
@@ -201,7 +181,7 @@ final class WindowOverlay {
     }
 
     func setVisibleActions(_ actions: Set<WindowAction>) {
-        let nextActions = isSuppressed || isFastDragSuppressed || !isEligibleForDisplay
+        let nextActions = isSuppressed || !isEligibleForDisplay
             ? []
             : actions.intersection(preparedActions)
         guard nextActions != visibleActions else { return }
@@ -243,8 +223,6 @@ final class WindowOverlay {
     func suppressUntilRestored() {
         isSuppressed = true
         isEligibleForDisplay = false
-        fastDragGuard.reset()
-        isFastDragSuppressed = false
         hide()
     }
 

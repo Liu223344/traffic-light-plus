@@ -12,7 +12,6 @@
 - Added persistent per-button actions, including quitting or hiding the target application.
 - Hid overlays before minimization begins and restored them only after the window leaves the Dock.
 - Reduced idle WindowServer sampling to 10 Hz while using a 240 Hz boost during moves and resizes.
-- Added an adaptive fast-drag guard that temporarily hides overlays after large frame jumps and restores them after the window settles.
 
 ## 1.0.0 - 2026-07-14
 

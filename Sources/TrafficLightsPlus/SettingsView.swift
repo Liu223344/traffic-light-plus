@@ -131,7 +131,6 @@ struct SettingsView: View {
             }
 
             Toggle("在全屏窗口中显示", isOn: $preferences.showInFullScreen)
-            Toggle("快速拖动时暂时隐藏", isOn: $preferences.hideDuringFastDrag)
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {

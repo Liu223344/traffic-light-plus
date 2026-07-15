@@ -21,7 +21,6 @@ final class Preferences: ObservableObject {
         static let closeBehavior = "closeButtonBehavior"
         static let minimizeBehavior = "minimizeButtonBehavior"
         static let zoomBehavior = "zoomButtonBehavior"
-        static let hideDuringFastDrag = "hideDuringFastDrag"
     }
 
     private let defaults: UserDefaults
@@ -54,10 +53,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(zoomBehavior.rawValue, forKey: Key.zoomBehavior) }
     }
 
-    @Published var hideDuringFastDrag: Bool {
-        didSet { defaults.set(hideDuringFastDrag, forKey: Key.hideDuringFastDrag) }
-    }
-
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
@@ -67,8 +62,7 @@ final class Preferences: ObservableObject {
             Key.showInFullScreen: false,
             Key.closeBehavior: ButtonBehavior.closeWindow.rawValue,
             Key.minimizeBehavior: ButtonBehavior.minimizeWindow.rawValue,
-            Key.zoomBehavior: ButtonBehavior.zoomWindow.rawValue,
-            Key.hideDuringFastDrag: true
+            Key.zoomBehavior: ButtonBehavior.zoomWindow.rawValue
         ])
         enabled = defaults.bool(forKey: Key.enabled)
         size = min(max(defaults.double(forKey: Key.size), ControlLayout.sizeRange.lowerBound), ControlLayout.sizeRange.upperBound)
@@ -77,7 +71,6 @@ final class Preferences: ObservableObject {
         closeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.closeBehavior) ?? "") ?? .closeWindow
         minimizeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.minimizeBehavior) ?? "") ?? .minimizeWindow
         zoomBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.zoomBehavior) ?? "") ?? .zoomWindow
-        hideDuringFastDrag = defaults.bool(forKey: Key.hideDuringFastDrag)
     }
 
     func behavior(for action: WindowAction) -> ButtonBehavior {
