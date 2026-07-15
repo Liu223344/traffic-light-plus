@@ -56,6 +56,8 @@ final class WindowTracker {
     private var refreshScheduled = false
     private var lastScanSummary = ""
     private var trackingCadence = TrackingCadence()
+    private var trackingActivity: NSObjectProtocol?
+    private var trackingActivityEndWorkItem: DispatchWorkItem?
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -79,16 +81,20 @@ final class WindowTracker {
         }
         // The timer matches the active tracking rate. TrackingCadence skips most
         // callbacks while idle, so 240 Hz is used only around moves and resizes.
-        positionTimer = Timer(timeInterval: TrackingCadence.activeInterval, repeats: true) { [weak self] _ in
+        let positionTimer = Timer(timeInterval: TrackingCadence.activeInterval, repeats: true) { [weak self] _ in
             self?.syncWindowPositions()
         }
-        RunLoop.main.add(positionTimer!, forMode: .common)
+        positionTimer.tolerance = 0
+        self.positionTimer = positionTimer
+        RunLoop.main.add(positionTimer, forMode: .common)
         refreshAll()
     }
 
     deinit {
         timer?.invalidate()
         positionTimer?.invalidate()
+        trackingActivityEndWorkItem?.cancel()
+        endTrackingActivity()
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach(center.removeObserver)
     }
@@ -156,14 +162,13 @@ final class WindowTracker {
         case kAXMovedNotification:
             // AX window geometry trails the compositor during an interactive drag.
             // Pull the current WindowServer frame instead of applying a stale AX frame.
-            trackingCadence.boost(now: ProcessInfo.processInfo.systemUptime)
+            boostTracking()
             syncWindowPositions(force: true)
         case kAXResizedNotification:
-            trackingCadence.boost(now: ProcessInfo.processInfo.systemUptime)
+            boostTracking()
             if let overlay = overlays[key] {
                 _ = overlay.update(preferences: preferences, recalibrateNativeCenters: true)
                 syncWindowPositions(force: true)
-                refreshVisibility()
             } else {
                 scheduleRefresh()
             }
@@ -202,6 +207,31 @@ final class WindowTracker {
         ] {
             _ = AXObserverAddNotification(observer, element, notification as CFString, context)
         }
+    }
+
+    private func boostTracking() {
+        trackingCadence.boost(now: ProcessInfo.processInfo.systemUptime)
+        if trackingActivity == nil {
+            trackingActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .latencyCritical],
+                reason: "Keep traffic-light overlays synchronized during window movement"
+            )
+        }
+
+        trackingActivityEndWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in self?.endTrackingActivity() }
+        trackingActivityEndWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + TrackingCadence.activeDuration + 0.05,
+            execute: workItem
+        )
+    }
+
+    private func endTrackingActivity() {
+        guard let trackingActivity else { return }
+        ProcessInfo.processInfo.endActivity(trackingActivity)
+        self.trackingActivity = nil
+        trackingActivityEndWorkItem = nil
     }
 
     private func registerWindowNotifications(for key: AXWindowKey) {

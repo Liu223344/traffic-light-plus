@@ -13,6 +13,7 @@
 - Hid overlays before minimization begins and restored them only after the window leaves the Dock.
 - Reduced idle WindowServer sampling to 10 Hz while using a 240 Hz boost during moves and resizes.
 - Paused periodic accessibility rescans during active tracking and stopped redrawing unchanged panel contents on position-only updates.
+- Enabled a short-lived latency-critical process activity during moves and removed a duplicate WindowServer query from resize handling.
 
 ## 1.0.0 - 2026-07-14
 
