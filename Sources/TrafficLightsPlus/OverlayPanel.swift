@@ -221,28 +221,7 @@ final class OverlayPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
-        level = .normal
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-    }
-}
-
-final class OverlayAnchorPanel: NSPanel {
-    init() {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        backgroundColor = .clear
-        isOpaque = false
-        hasShadow = false
-        ignoresMouseEvents = true
-        level = .normal
+        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true

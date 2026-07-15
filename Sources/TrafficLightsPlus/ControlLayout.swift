@@ -70,4 +70,13 @@ struct ControlLayout {
         [.close, .minimize, .zoom]
     }
 
+    static func unobscuredActions(
+        controlFrames: [WindowAction: CGRect],
+        coveringFrames: [CGRect]
+    ) -> Set<WindowAction> {
+        Set(controlFrames.compactMap { action, frame in
+            coveringFrames.contains(where: { $0.intersects(frame) }) ? nil : action
+        })
+    }
+
 }

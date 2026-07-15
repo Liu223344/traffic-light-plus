@@ -11,24 +11,7 @@ import Testing
 
     #expect(panel.overlayView.frame.origin == .zero)
     #expect(panel.overlayView.frame.size == NSSize(width: 40, height: 40))
-    #expect(panel.level == .normal)
-}
-
-@MainActor
-@Test func anchorPanelMovesAllTrafficLightChildrenTogether() {
-    let anchor = OverlayAnchorPanel()
-    let close = OverlayPanel(action: .close)
-    let minimize = OverlayPanel(action: .minimize)
-    anchor.setFrameOrigin(NSPoint(x: 10, y: 10))
-    anchor.addChildWindow(close, ordered: .above)
-    anchor.addChildWindow(minimize, ordered: .above)
-    close.setFrame(NSRect(x: 100, y: 100, width: 24, height: 24), display: false)
-    minimize.setFrame(NSRect(x: 132, y: 100, width: 24, height: 24), display: false)
-
-    anchor.setFrameOrigin(NSPoint(x: 30, y: 45))
-
-    #expect(close.frame.origin == NSPoint(x: 120, y: 135))
-    #expect(minimize.frame.origin == NSPoint(x: 152, y: 135))
+    #expect(panel.level == .floating)
 }
 
 @MainActor
