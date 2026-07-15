@@ -13,7 +13,7 @@ import Testing
 }
 
 @MainActor
-@Test func overlayIsGrayUntilItsGroupIsHovered() {
+@Test func overlayColorVisibilityFollowsActivationAndHover() {
     let panel = OverlayPanel(action: .close)
 
     #expect(!panel.overlayView.isColorVisible)
@@ -21,4 +21,8 @@ import Testing
     #expect(panel.overlayView.isColorVisible)
     panel.overlayView.isGroupHovered = false
     #expect(!panel.overlayView.isColorVisible)
+
+    panel.overlayView.isWindowActive = true
+    #expect(panel.overlayView.isColorVisible)
+    #expect(!panel.overlayView.isPointerHighlightVisible)
 }

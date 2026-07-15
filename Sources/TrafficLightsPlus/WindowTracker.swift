@@ -238,17 +238,34 @@ final class WindowTracker {
     private func syncWindowPositions() {
         guard preferences.enabled, AXIsProcessTrusted(), !overlays.isEmpty else { return }
         let records = cgWindowRecords()
-        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        let indicesByID = Dictionary(uniqueKeysWithValues: records.enumerated().map { ($0.element.id, $0.offset) })
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let mouseLocation = NSEvent.mouseLocation
 
         for overlay in overlays.values {
-            if let windowID = overlay.cgWindowID, let record = recordsByID[windowID] {
-                overlay.syncPosition(to: record.bounds)
-                continue
+            let targetIndex: Int?
+            if let windowID = overlay.cgWindowID {
+                targetIndex = indicesByID[windowID]
+                if targetIndex == nil {
+                    // A stale overlay is more visible than a one-frame hide while
+                    // WindowServer replaces or removes a window record.
+                    overlay.setVisible(false)
+                    continue
+                }
+            } else {
+                targetIndex = matchingRecordIndex(for: overlay, in: records)
             }
-            guard let index = matchingRecordIndex(for: overlay, in: records) else { continue }
-            let record = records[index]
+
+            guard let targetIndex else { continue }
+            let record = records[targetIndex]
             overlay.bind(to: record.id)
             overlay.syncPosition(to: record.bounds)
+
+            let covered = records[..<targetIndex].contains { candidate in
+                candidate.pid != ownPID && candidate.bounds.intersects(overlay.controlBounds)
+            }
+            overlay.setVisible(!covered)
+            overlay.reconcileHoverState(mouseLocation: mouseLocation)
         }
     }
 

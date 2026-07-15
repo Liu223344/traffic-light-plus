@@ -60,6 +60,10 @@ final class WindowOverlay {
 
         windowFrame = frame
         title = copyAttribute(kAXTitleAttribute as CFString, from: window) ?? ""
+        let appIsActive = NSRunningApplication(processIdentifier: key.pid)?.isActive ?? false
+        let windowIsFocused: Bool = copyAttribute(kAXFocusedAttribute as CFString, from: window) ?? false
+        let windowIsMain: Bool = copyAttribute(kAXMainAttribute as CFString, from: window) ?? false
+        let isActiveWindow = appIsActive && (windowIsFocused || windowIsMain)
         let controlSize = ControlLayout.effectiveSize(preferred: preferences.size)
         var buttons: [WindowAction: AXUIElement] = [:]
         var frames: [WindowAction: CGRect] = [:]
@@ -119,6 +123,7 @@ final class WindowOverlay {
             panel.overlayView.style = preferences.style
             panel.overlayView.controlSize = controlSize
             panel.overlayView.isControlEnabled = isEnabled
+            panel.overlayView.isWindowActive = isActiveWindow
             let newFrame = NSRect(origin: origin, size: cgFrame.size)
             if panel.frame != newFrame { panel.setFrame(newFrame, display: true) }
             preparedCGFrames[action] = cgFrame
@@ -157,8 +162,21 @@ final class WindowOverlay {
     }
 
     func setVisible(_ visible: Bool) {
+        guard visible != isShown else { return }
         isShown = visible
         visible ? show() : hidePanels()
+    }
+
+    func reconcileHoverState(mouseLocation: NSPoint) {
+        guard isShown else { return }
+        var pointerInsideGroup = false
+        for action in preparedActions {
+            guard let panel = panels[action] else { continue }
+            let pointerInsideButton = panel.frame.contains(mouseLocation)
+            panel.overlayView.setPointerInside(pointerInsideButton)
+            pointerInsideGroup = pointerInsideGroup || pointerInsideButton
+        }
+        setGroupHovered(pointerInsideGroup)
     }
 
     func hide() {
@@ -180,13 +198,15 @@ final class WindowOverlay {
     }
 
     private func setGroupHovered(_ hovered: Bool) {
-        hoverResetWorkItem?.cancel()
-        hoverResetWorkItem = nil
-
         if hovered {
+            hoverResetWorkItem?.cancel()
+            hoverResetWorkItem = nil
             panels.values.forEach { $0.overlayView.isGroupHovered = true }
             return
         }
+
+        guard hoverResetWorkItem == nil,
+              panels.values.contains(where: { $0.overlayView.isGroupHovered }) else { return }
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }

@@ -5,7 +5,9 @@
 - Reworked tracking to cover all visible application windows instead of only the frontmost window.
 - Added WindowServer window-ID matching and high-frequency position synchronization during drags.
 - Kept native button centers stable while a window is moving to avoid stale accessibility coordinates.
-- Made controls dark gray while idle and restored all three native colors when the pointer hovers the group.
+- Matched native activation behavior: the active window stays colored, while background windows use AppKit's inactive control color and regain color on hover.
+- Rechecked window occlusion on every position sample so background overlays cannot remain above a quickly moved foreground window.
+- Reconciled hover state against the live pointer position so a dragged panel cannot remain colored after moving away from the pointer.
 
 ## 1.0.0 - 2026-07-14
 

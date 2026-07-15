@@ -11,11 +11,20 @@ final class OverlayButtonView: NSView {
     var style: ControlStyle = .macOS { didSet { needsDisplay = true } }
     var controlSize: CGFloat = 28 { didSet { needsDisplay = true } }
     var isControlEnabled = true { didSet { needsDisplay = true } }
+    var isWindowActive = false { didSet { needsDisplay = true } }
     var isGroupHovered = false { didSet { needsDisplay = true } }
     var actionHandler: ((WindowAction) -> Void)?
     var hoverHandler: ((Bool) -> Void)?
 
-    var isColorVisible: Bool { isGroupHovered || isHovered || isPressed }
+    var isColorVisible: Bool { isWindowActive || isGroupHovered || isHovered || isPressed }
+    var isPointerHighlightVisible: Bool { isGroupHovered || isHovered || isPressed }
+
+    func setPointerInside(_ inside: Bool) {
+        guard inside != isHovered else { return }
+        isHovered = inside
+        if !inside { isPressed = false }
+        needsDisplay = true
+    }
 
     func resetInteractionState() {
         isHovered = false
@@ -55,16 +64,13 @@ final class OverlayButtonView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
+        setPointerInside(true)
         hoverHandler?(true)
-        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        isPressed = false
+        setPointerInside(false)
         hoverHandler?(false)
-        needsDisplay = true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -86,17 +92,16 @@ final class OverlayButtonView: NSView {
         super.draw(dirtyRect)
         let rect = bounds
         let actionColor = color(for: action)
-        // Match the system's dynamic inactive-control color in light and dark mode.
-        let idleColor = NSColor.systemGray
+        let idleColor = inactiveControlColor()
         let fillColor: NSColor
 
         if !isControlEnabled {
-            fillColor = idleColor.withAlphaComponent(0.48)
+            fillColor = idleColor
         } else if isPressed {
             fillColor = actionColor.blended(withFraction: 0.24, of: .black) ?? actionColor
         } else if isHovered {
             fillColor = actionColor.blended(withFraction: 0.10, of: .black) ?? actionColor
-        } else if isGroupHovered {
+        } else if isWindowActive || isGroupHovered {
             fillColor = actionColor
         } else {
             fillColor = idleColor
@@ -114,7 +119,7 @@ final class OverlayButtonView: NSView {
             path.stroke()
         }
 
-        if style != .macOS || isColorVisible {
+        if style != .macOS || isPointerHighlightVisible {
             drawSymbol(in: rect)
         }
     }
@@ -144,9 +149,22 @@ final class OverlayButtonView: NSView {
 
     private func color(for action: WindowAction) -> NSColor {
         switch action {
-        case .close: return NSColor(red: 0.98, green: 0.28, blue: 0.26, alpha: 1)
-        case .minimize: return NSColor(red: 1, green: 0.70, blue: 0.12, alpha: 1)
-        case .zoom: return NSColor(red: 0.16, green: 0.74, blue: 0.32, alpha: 1)
+        case .close:
+            return NSColor(srgbRed: 1.0, green: 0.37255, blue: 0.34118, alpha: 1.0)
+        case .minimize:
+            return NSColor(srgbRed: 0.99608, green: 0.73725, blue: 0.18039, alpha: 1.0)
+        case .zoom:
+            return NSColor(srgbRed: 0.15686, green: 0.78431, blue: 0.25098, alpha: 1.0)
+        }
+    }
+
+    private func inactiveControlColor() -> NSColor {
+        switch effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) {
+        case .darkAqua:
+            // Sampled from the center of a native inactive traffic-light button.
+            return NSColor(srgbRed: 0.37647, green: 0.37647, blue: 0.37255, alpha: 1.0)
+        default:
+            return NSColor(srgbRed: 0.74510, green: 0.74510, blue: 0.73725, alpha: 1.0)
         }
     }
 
