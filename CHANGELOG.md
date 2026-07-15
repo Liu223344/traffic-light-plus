@@ -8,6 +8,7 @@
 - Matched native activation behavior: the active window stays colored, while background windows use AppKit's inactive control color and regain color on hover.
 - Rechecked window occlusion on every position sample so background overlays cannot remain above a quickly moved foreground window.
 - Reconciled hover state against the live pointer position so a dragged panel cannot remain colored after moving away from the pointer.
+- Applied occlusion per button so a foreground window hides only the traffic lights it actually covers.
 
 ## 1.0.0 - 2026-07-14
 

@@ -226,11 +226,14 @@ final class WindowTracker {
             }
             overlay.bind(to: records[targetIndex].id)
             overlay.syncPosition(to: records[targetIndex].bounds)
-            let covered = records[..<targetIndex].contains { record in
-                record.pid != ownPID && record.bounds.intersects(overlay.controlBounds)
-            }
-            overlay.setVisible(!covered)
-            if !covered { shown += 1 }
+            let visibleActions = unobscuredActions(
+                for: overlay,
+                above: targetIndex,
+                in: records,
+                ownPID: ownPID
+            )
+            overlay.setVisibleActions(visibleActions)
+            if !visibleActions.isEmpty { shown += 1 }
         }
         logger.debug("Visible overlays: \(shown, privacy: .public) / \(self.overlays.count, privacy: .public)")
     }
@@ -261,12 +264,29 @@ final class WindowTracker {
             overlay.bind(to: record.id)
             overlay.syncPosition(to: record.bounds)
 
-            let covered = records[..<targetIndex].contains { candidate in
-                candidate.pid != ownPID && candidate.bounds.intersects(overlay.controlBounds)
-            }
-            overlay.setVisible(!covered)
+            overlay.setVisibleActions(unobscuredActions(
+                for: overlay,
+                above: targetIndex,
+                in: records,
+                ownPID: ownPID
+            ))
             overlay.reconcileHoverState(mouseLocation: mouseLocation)
         }
+    }
+
+    private func unobscuredActions(
+        for overlay: WindowOverlay,
+        above targetIndex: Int,
+        in records: [CGWindowRecord],
+        ownPID: pid_t
+    ) -> Set<WindowAction> {
+        let coveringFrames = records[..<targetIndex]
+            .filter { $0.pid != ownPID }
+            .map(\.bounds)
+        return ControlLayout.unobscuredActions(
+            controlFrames: overlay.controlFrames,
+            coveringFrames: coveringFrames
+        )
     }
 
     private func matchingRecordIndex(for overlay: WindowOverlay, in records: [CGWindowRecord]) -> Int? {

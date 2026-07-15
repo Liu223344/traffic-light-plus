@@ -17,6 +17,22 @@ import Testing
     #expect(enlarged.midY == native.midY)
 }
 
+@Test func occlusionHidesOnlyTheCoveredTrafficLight() {
+    let frames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 100, y: 100, width: 30, height: 30),
+        .minimize: CGRect(x: 138, y: 100, width: 30, height: 30),
+        .zoom: CGRect(x: 176, y: 100, width: 30, height: 30)
+    ]
+    let foregroundWindow = CGRect(x: 190, y: 80, width: 500, height: 500)
+
+    let visible = ControlLayout.unobscuredActions(
+        controlFrames: frames,
+        coveringFrames: [foregroundWindow]
+    )
+
+    #expect(visible == Set([.close, .minimize]))
+}
+
 @Test func macOSFramesHaveDraggableGaps() throws {
     let frames = ControlLayout.frames(
         style: .macOS,

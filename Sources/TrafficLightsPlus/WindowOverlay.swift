@@ -20,7 +20,6 @@ final class WindowOverlay {
     let key: AXWindowKey
     private let panels: [WindowAction: OverlayPanel]
     private(set) var windowFrame = CGRect.zero
-    private(set) var controlBounds = CGRect.zero
     private(set) var title = ""
     private(set) var cgWindowID: CGWindowID?
 
@@ -30,7 +29,7 @@ final class WindowOverlay {
     private var nativeCenterOffsets: [WindowAction: CGPoint] = [:]
     private var preparedCGFrames: [WindowAction: CGRect] = [:]
     private var preparedActions = Set<WindowAction>()
-    private var isShown = false
+    private var visibleActions = Set<WindowAction>()
     private var lastDiagnostic = ""
     private var hoverResetWorkItem: DispatchWorkItem?
 
@@ -130,14 +129,16 @@ final class WindowOverlay {
             preparedActions.insert(action)
         }
 
-        let preparedFrames = preparedActions.compactMap { frames[$0] }
-        controlBounds = preparedFrames.dropFirst().reduce(preparedFrames.first ?? .zero) { $0.union($1) }
-        if isShown { show() }
+        setVisibleActions(visibleActions.intersection(preparedActions))
         return !preparedActions.isEmpty
     }
 
     func bind(to windowID: CGWindowID) {
         cgWindowID = windowID
+    }
+
+    var controlFrames: [WindowAction: CGRect] {
+        preparedCGFrames
     }
 
     func syncPosition(to currentWindowFrame: CGRect) {
@@ -148,7 +149,6 @@ final class WindowOverlay {
         guard abs(delta.x) > 0.01 || abs(delta.y) > 0.01 else { return }
 
         windowFrame.origin = currentWindowFrame.origin
-        controlBounds = controlBounds.offsetBy(dx: delta.x, dy: delta.y)
 
         for action in preparedActions {
             guard let panel = panels[action], var cgFrame = preparedCGFrames[action] else { continue }
@@ -162,15 +162,34 @@ final class WindowOverlay {
     }
 
     func setVisible(_ visible: Bool) {
-        guard visible != isShown else { return }
-        isShown = visible
-        visible ? show() : hidePanels()
+        setVisibleActions(visible ? preparedActions : [])
+    }
+
+    func setVisibleActions(_ actions: Set<WindowAction>) {
+        let nextActions = actions.intersection(preparedActions)
+        guard nextActions != visibleActions else { return }
+        visibleActions = nextActions
+
+        for action in WindowAction.allCases {
+            guard let panel = panels[action] else { continue }
+            if nextActions.contains(action) {
+                panel.orderFrontRegardless()
+            } else {
+                panel.overlayView.resetInteractionState()
+                if panel.isVisible { panel.orderOut(nil) }
+            }
+        }
+
+        if nextActions.isEmpty {
+            hoverResetWorkItem?.cancel()
+            hoverResetWorkItem = nil
+        }
     }
 
     func reconcileHoverState(mouseLocation: NSPoint) {
-        guard isShown else { return }
+        guard !visibleActions.isEmpty else { return }
         var pointerInsideGroup = false
-        for action in preparedActions {
+        for action in visibleActions {
             guard let panel = panels[action] else { continue }
             let pointerInsideButton = panel.frame.contains(mouseLocation)
             panel.overlayView.setPointerInside(pointerInsideButton)
@@ -180,14 +199,8 @@ final class WindowOverlay {
     }
 
     func hide() {
-        isShown = false
+        visibleActions.removeAll(keepingCapacity: true)
         hidePanels()
-    }
-
-    private func show() {
-        for action in WindowAction.allCases where preparedActions.contains(action) {
-            panels[action]?.orderFrontRegardless()
-        }
     }
 
     private func hidePanels() {
