@@ -113,6 +113,119 @@ import Testing
     ) == 0)
 }
 
+@Test func minimizeDismissalShrinksToNativeSizeInSixtyMilliseconds() {
+    let halfway = ControlLayout.nextPresentationProgress(
+        current: 1,
+        elapsed: WindowOverlay.minimizeDismissDuration / 2,
+        expanding: false,
+        duration: WindowOverlay.minimizeDismissDuration
+    )
+    let hidden = ControlLayout.nextPresentationProgress(
+        current: 1,
+        elapsed: WindowOverlay.minimizeDismissDuration,
+        expanding: false,
+        duration: WindowOverlay.minimizeDismissDuration
+    )
+
+    #expect(abs(halfway - 0.5) < 0.0001)
+    #expect(hidden == 0)
+}
+
+@Test func nearestActionUsesDirectHitsAndGapDistance() {
+    let frames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 0, y: 0, width: 12, height: 12),
+        .minimize: CGRect(x: 20, y: 0, width: 12, height: 12),
+        .zoom: CGRect(x: 40, y: 0, width: 12, height: 12)
+    ]
+    let actions = Set(WindowAction.allCases)
+
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 4, y: 6),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: .zoom
+    ) == .close)
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 18, y: 6),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: nil
+    ) == .minimize)
+}
+
+@Test func nearestActionUsesFourPointHysteresisInGaps() {
+    let frames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 0, y: 0, width: 12, height: 12),
+        .minimize: CGRect(x: 20, y: 0, width: 12, height: 12),
+        .zoom: CGRect(x: 40, y: 0, width: 12, height: 12)
+    ]
+    let actions = Set(WindowAction.allCases)
+
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 16, y: 16),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: .close
+    ) == .close)
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 19, y: 16),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: .close
+    ) == .minimize)
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 45, y: 6),
+        controlFrames: frames,
+        actions: [.close, .zoom],
+        currentAction: .minimize
+    ) == .zoom)
+}
+
+@Test func nearestActionUsesHysteresisInOverlappingButtonFrames() {
+    let frames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 0, y: 0, width: 28, height: 28),
+        .minimize: CGRect(x: 20, y: 0, width: 28, height: 28)
+    ]
+    let actions: Set<WindowAction> = [.close, .minimize]
+
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 25, y: 14),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: .close
+    ) == .close)
+    #expect(ControlLayout.nearestAction(
+        to: CGPoint(x: 28, y: 14),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: .close
+    ) == .minimize)
+}
+
+@Test func revealModeSelectsGroupOrNearestAction() {
+    let frames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 0, y: 0, width: 12, height: 12),
+        .minimize: CGRect(x: 20, y: 0, width: 12, height: 12),
+        .zoom: CGRect(x: 40, y: 0, width: 12, height: 12)
+    ]
+    let actions = Set(WindowAction.allCases)
+
+    #expect(ControlLayout.revealActions(
+        mode: .group,
+        pointer: CGPoint(x: 24, y: 6),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: nil
+    ) == actions)
+    #expect(ControlLayout.revealActions(
+        mode: .nearest,
+        pointer: CGPoint(x: 24, y: 6),
+        controlFrames: frames,
+        actions: actions,
+        currentAction: nil
+    ) == [.minimize])
+}
+
 @Test func macOSFramesHaveDraggableGaps() throws {
     let frames = ControlLayout.frames(
         style: .macOS,

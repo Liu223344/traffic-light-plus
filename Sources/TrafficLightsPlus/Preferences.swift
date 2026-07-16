@@ -12,6 +12,18 @@ enum ControlStyle: String, CaseIterable {
     }
 }
 
+enum HiddenTrafficLightRevealMode: String, CaseIterable {
+    case group
+    case nearest
+
+    var title: String {
+        switch self {
+        case .group: return "整组"
+        case .nearest: return "单个"
+        }
+    }
+}
+
 final class Preferences: ObservableObject {
     private enum Key {
         static let enabled = "enabled"
@@ -19,6 +31,7 @@ final class Preferences: ObservableObject {
         static let spacing = "controlSpacingAdjustment"
         static let style = "controlStyle"
         static let hiddenTrafficLightsEnabled = "hiddenTrafficLightsEnabled"
+        static let hiddenTrafficLightRevealMode = "hiddenTrafficLightRevealMode"
         static let showInFullScreen = "showInFullScreen"
         static let closeBehavior = "closeButtonBehavior"
         static let minimizeBehavior = "minimizeButtonBehavior"
@@ -47,6 +60,10 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(hiddenTrafficLightsEnabled, forKey: Key.hiddenTrafficLightsEnabled) }
     }
 
+    @Published var hiddenTrafficLightRevealMode: HiddenTrafficLightRevealMode {
+        didSet { defaults.set(hiddenTrafficLightRevealMode.rawValue, forKey: Key.hiddenTrafficLightRevealMode) }
+    }
+
     @Published var showInFullScreen: Bool {
         didSet { defaults.set(showInFullScreen, forKey: Key.showInFullScreen) }
     }
@@ -71,6 +88,7 @@ final class Preferences: ObservableObject {
             Key.spacing: 0.0,
             Key.style: ControlStyle.macOS.rawValue,
             Key.hiddenTrafficLightsEnabled: true,
+            Key.hiddenTrafficLightRevealMode: HiddenTrafficLightRevealMode.nearest.rawValue,
             Key.showInFullScreen: false,
             Key.closeBehavior: ButtonBehavior.closeWindow.rawValue,
             Key.minimizeBehavior: ButtonBehavior.minimizeWindow.rawValue,
@@ -84,6 +102,9 @@ final class Preferences: ObservableObject {
         )
         style = ControlStyle(rawValue: defaults.string(forKey: Key.style) ?? "") ?? .macOS
         hiddenTrafficLightsEnabled = defaults.bool(forKey: Key.hiddenTrafficLightsEnabled)
+        hiddenTrafficLightRevealMode = HiddenTrafficLightRevealMode(
+            rawValue: defaults.string(forKey: Key.hiddenTrafficLightRevealMode) ?? ""
+        ) ?? .nearest
         showInFullScreen = defaults.bool(forKey: Key.showInFullScreen)
         closeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.closeBehavior) ?? "") ?? .closeWindow
         minimizeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.minimizeBehavior) ?? "") ?? .minimizeWindow

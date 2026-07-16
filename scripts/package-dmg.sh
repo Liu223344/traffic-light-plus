@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT="${0:A:h:h}"
 APP="$ROOT/build/Traffic Lights Plus.app"
 STAGE="$ROOT/.build/dmg-root"
-DMG="$ROOT/build/Traffic-Lights-Plus-1.0.0.dmg"
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Info.plist")
+DMG="$ROOT/build/Traffic-Lights-Plus-$VERSION.dmg"
 
 "$ROOT/scripts/build-app.sh"
 

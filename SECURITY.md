@@ -1,8 +1,8 @@
 # Security Policy
 
-Traffic Lights+ 使用 macOS 辅助功能权限读取当前窗口位置，并触发标准关闭、最小化和缩放按钮。应用不包含网络通信或数据收集代码。
+Traffic Lights+ 使用 macOS 辅助功能权限读取可见窗口的位置，并触发标准关闭、最小化和缩放按钮。应用不包含网络通信或数据收集代码。
 
-请不要在公开 Issue 中披露未修复的安全问题。可以通过 GitHub 仓库所有者的个人资料联系维护者，并提供：
+请不要在公开 Issue 中披露未修复的安全问题。请使用仓库的 [GitHub Private Vulnerability Reporting](https://github.com/Liu223344/supper-traffic/security/advisories/new) 提交，并提供：
 
 - 受影响版本；
 - 可复现步骤；

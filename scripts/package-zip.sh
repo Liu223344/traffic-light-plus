@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT="${0:A:h:h}"
 APP="$ROOT/build/Traffic Lights Plus.app"
-ZIP="$ROOT/build/Traffic-Lights-Plus-1.0.0.zip"
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Info.plist")
+ZIP="$ROOT/build/Traffic-Lights-Plus-$VERSION.zip"
 
 "$ROOT/scripts/build-app.sh"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"

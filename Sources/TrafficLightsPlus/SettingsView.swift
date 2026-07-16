@@ -165,6 +165,16 @@ struct SettingsView: View {
 
             Toggle("隐藏式红绿灯", isOn: $preferences.hiddenTrafficLightsEnabled)
 
+            if preferences.hiddenTrafficLightsEnabled {
+                Picker("放大方式", selection: $preferences.hiddenTrafficLightRevealMode) {
+                    ForEach(HiddenTrafficLightRevealMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
             Toggle("在全屏窗口中显示", isOn: $preferences.showInFullScreen)
 
             VStack(alignment: .leading, spacing: 10) {

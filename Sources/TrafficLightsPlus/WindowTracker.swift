@@ -134,8 +134,7 @@ final class WindowTracker {
         for pid in stalePIDs {
             applications.removeValue(forKey: pid)
         }
-        let appNames = runningApps.compactMap(\.localizedName).sorted().joined(separator: ",")
-        reportScan("apps=[\(appNames)] windows=\(seenWindows.count) overlays=\(overlays.count)")
+        reportScan("apps=\(runningApps.count) windows=\(seenWindows.count) overlays=\(overlays.count)")
         refreshVisibility()
     }
 
@@ -247,7 +246,8 @@ final class WindowTracker {
             overlay.updatePresentation(
                 availableActions: visibleActions,
                 mouseLocation: mouseLocation,
-                hiddenModeEnabled: preferences.hiddenTrafficLightsEnabled
+                hiddenModeEnabled: preferences.hiddenTrafficLightsEnabled,
+                revealMode: preferences.hiddenTrafficLightRevealMode
             )
             if !visibleActions.isEmpty { shown += 1 }
         }
@@ -288,7 +288,8 @@ final class WindowTracker {
             overlay.updatePresentation(
                 availableActions: visibleActions,
                 mouseLocation: mouseLocation,
-                hiddenModeEnabled: preferences.hiddenTrafficLightsEnabled
+                hiddenModeEnabled: preferences.hiddenTrafficLightsEnabled,
+                revealMode: preferences.hiddenTrafficLightRevealMode
             )
         }
     }

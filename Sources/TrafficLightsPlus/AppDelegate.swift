@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
         if let window = settingsWindow {
-            logger.notice("Settings window visible: \(window.isVisible, privacy: .public), frame: \(NSStringFromRect(window.frame), privacy: .public)")
+            logger.notice("Settings window visible: \(window.isVisible, privacy: .public)")
         }
     }
 

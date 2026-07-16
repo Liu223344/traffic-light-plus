@@ -26,6 +26,7 @@ enum OverlayPresentationState {
 
 final class WindowOverlay {
     private static let minimizeDispatchDelay = 1.0 / 120.0
+    static let minimizeDismissDuration = 0.060
     private static let revealDuration = 0.10
 
     let key: AXWindowKey
@@ -49,8 +50,15 @@ final class WindowOverlay {
     private var lastDiagnostic = ""
     private var hoverResetWorkItem: DispatchWorkItem?
     private var minimizeRequestGeneration = 0
+    private var isMinimizeDismissalInProgress = false
     private var hiddenModeEnabled = true
-    private var presentationProgress: CGFloat = 0
+    private var revealMode = HiddenTrafficLightRevealMode.nearest
+    private var presentationProgressByAction = Dictionary(
+        uniqueKeysWithValues: WindowAction.allCases.map { ($0, CGFloat.zero) }
+    )
+    private var selectedNearestAction: WindowAction?
+    private var interactiveActions = Set<WindowAction>()
+    private var lastDesiredActions = Set<WindowAction>()
     private var lastPresentationUpdate = 0.0
     private(set) var presentationState = OverlayPresentationState.hidden
 
@@ -143,10 +151,7 @@ final class WindowOverlay {
             for action in buttons.keys { frames[action] = edgeFrames[action] }
         }
 
-        let nativeFrameSummary = WindowAction.allCases.map { action in
-            "\(action)=\(buttons[action].flatMap(axFrame).map(NSStringFromRect) ?? "missing")"
-        }.joined(separator: ";")
-        report("pid=\(key.pid) title=\(title) window=\(NSStringFromRect(frame)) \(nativeFrameSummary)")
+        report("pid=\(key.pid) controls=\(buttons.count)")
 
         targetButtons = buttons
         preparedCGFrames.removeAll(keepingCapacity: true)
@@ -211,12 +216,14 @@ final class WindowOverlay {
         availableActions actions: Set<WindowAction>,
         mouseLocation: NSPoint,
         hiddenModeEnabled: Bool,
+        revealMode: HiddenTrafficLightRevealMode,
         now: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) {
         self.hiddenModeEnabled = hiddenModeEnabled
+        self.revealMode = revealMode
         guard !isSuppressed, isEligibleForDisplay else {
             presentationState = .suppressed
-            presentationProgress = 0
+            resetPresentationProgress()
             hidePanels()
             return
         }
@@ -224,49 +231,62 @@ final class WindowOverlay {
         availableActions = actions.intersection(preparedActions)
         guard !availableActions.isEmpty else {
             presentationState = .hidden
-            presentationProgress = 0
+            selectedNearestAction = nil
+            resetPresentationProgress()
             hidePanels()
             return
         }
 
-        let pointerInside = pointerInsideActivationRegion(mouseLocation)
-        let shouldExpand = !hiddenModeEnabled || pointerInside
+        let desiredActions = isMinimizeDismissalInProgress
+            ? Set<WindowAction>()
+            : desiredExpandedActions(mouseLocation: mouseLocation)
         let elapsed = lastPresentationUpdate > 0 ? min(max(now - lastPresentationUpdate, 0), 0.05) : 0
         lastPresentationUpdate = now
 
-        if !hiddenModeEnabled {
-            presentationProgress = 1
-        } else {
-            presentationProgress = ControlLayout.nextPresentationProgress(
-                current: presentationProgress,
-                elapsed: elapsed,
-                expanding: shouldExpand,
-                duration: Self.revealDuration
-            )
+        for action in WindowAction.allCases {
+            guard availableActions.contains(action) else {
+                presentationProgressByAction[action] = 0
+                continue
+            }
+            if isMinimizeDismissalInProgress {
+                presentationProgressByAction[action] = ControlLayout.nextPresentationProgress(
+                    current: presentationProgressByAction[action] ?? 0,
+                    elapsed: elapsed,
+                    expanding: false,
+                    duration: Self.minimizeDismissDuration
+                )
+            } else if !hiddenModeEnabled {
+                presentationProgressByAction[action] = 1
+            } else {
+                presentationProgressByAction[action] = ControlLayout.nextPresentationProgress(
+                    current: presentationProgressByAction[action] ?? 0,
+                    elapsed: elapsed,
+                    expanding: desiredActions.contains(action),
+                    duration: Self.revealDuration
+                )
+            }
         }
 
-        switch (shouldExpand, presentationProgress) {
-        case (_, 0): presentationState = .hidden
-        case (true, 1): presentationState = .visible
-        case (true, _): presentationState = .expanding
-        case (false, _): presentationState = .collapsing
-        }
-
-        renderPresentation(mouseLocation: mouseLocation)
+        updatePresentationState(desiredActions: desiredActions)
+        renderPresentation(desiredActions: desiredActions, mouseLocation: mouseLocation)
     }
 
-    private func renderPresentation(mouseLocation: NSPoint) {
-        let progress = presentationProgress * presentationProgress * (3 - 2 * presentationProgress)
-        let shouldShow = progress > 0
+    private func renderPresentation(
+        desiredActions: Set<WindowAction>,
+        mouseLocation: NSPoint
+    ) {
         var nextVisibleActions = Set<WindowAction>()
         var pointerInsideButton = false
 
         for action in WindowAction.allCases {
             guard let panel = panels[action] else { continue }
-            guard shouldShow,
+            let linearProgress = presentationProgressByAction[action] ?? 0
+            let progress = linearProgress * linearProgress * (3 - 2 * linearProgress)
+            guard progress > 0,
                   availableActions.contains(action),
                   let nativeFrame = nativeCGFrame(for: action),
                   let targetFrame = preparedCGFrames[action] else {
+                panel.ignoresMouseEvents = true
                 panel.overlayView.resetInteractionState()
                 if panel.isVisible { panel.orderOut(nil) }
                 continue
@@ -283,16 +303,24 @@ final class WindowOverlay {
             }
 
             if panel.frame != frame { panel.setFrame(frame, display: true) }
-            panel.alphaValue = progress
+            panel.alphaValue = 1
+            panel.ignoresMouseEvents = !desiredActions.contains(action)
             if !panel.isVisible { panel.orderFrontRegardless() }
             nextVisibleActions.insert(action)
 
-            let pointerInside = frame.contains(mouseLocation)
+            let pointerInside = desiredActions.contains(action) && frame.contains(mouseLocation)
             panel.overlayView.setPointerInside(pointerInside)
             pointerInsideButton = pointerInsideButton || pointerInside
         }
 
         visibleActions = nextVisibleActions
+        interactiveActions = desiredActions.intersection(nextVisibleActions)
+        if desiredActions != lastDesiredActions {
+            for action in ControlLayout.displayOrder(for: .macOS) where interactiveActions.contains(action) {
+                panels[action]?.orderFrontRegardless()
+            }
+            lastDesiredActions = desiredActions
+        }
         if visibleActions.isEmpty {
             hoverResetWorkItem?.cancel()
             hoverResetWorkItem = nil
@@ -301,12 +329,75 @@ final class WindowOverlay {
         }
     }
 
+    private func desiredExpandedActions(mouseLocation: NSPoint) -> Set<WindowAction> {
+        guard hiddenModeEnabled else {
+            selectedNearestAction = nil
+            return availableActions
+        }
+        guard pointerInsideActivationRegion(mouseLocation) else {
+            selectedNearestAction = nil
+            return []
+        }
+
+        switch revealMode {
+        case .group:
+            selectedNearestAction = nil
+            return ControlLayout.revealActions(
+                mode: .group,
+                pointer: mouseLocation,
+                controlFrames: appKitControlFrames(actions: availableActions),
+                actions: availableActions,
+                currentAction: nil
+            )
+        case .nearest:
+            let frames = appKitControlFrames(actions: availableActions)
+            let actions = ControlLayout.revealActions(
+                mode: .nearest,
+                pointer: mouseLocation,
+                controlFrames: frames,
+                actions: availableActions,
+                currentAction: selectedNearestAction
+            )
+            selectedNearestAction = actions.first
+            return actions
+        }
+    }
+
+    private func updatePresentationState(desiredActions: Set<WindowAction>) {
+        let visibleProgress = presentationProgressByAction.filter { $0.value > 0 }
+        guard !visibleProgress.isEmpty else {
+            presentationState = .hidden
+            return
+        }
+        if desiredActions.contains(where: { (presentationProgressByAction[$0] ?? 0) < 1 }) {
+            presentationState = .expanding
+        } else if visibleProgress.contains(where: { !desiredActions.contains($0.key) }) {
+            presentationState = .collapsing
+        } else {
+            presentationState = .visible
+        }
+    }
+
+    private func resetPresentationProgress() {
+        for action in WindowAction.allCases { presentationProgressByAction[action] = 0 }
+        interactiveActions.removeAll(keepingCapacity: true)
+        lastDesiredActions.removeAll(keepingCapacity: true)
+    }
+
     private func pointerInsideActivationRegion(_ mouseLocation: NSPoint) -> Bool {
-        guard let cgRegion = ControlLayout.activationRegion(
-            controlFrames: preparedCGFrames,
+        let frames = appKitControlFrames(actions: availableActions)
+        guard let region = ControlLayout.activationRegion(
+            controlFrames: frames,
             actions: availableActions
-        ), let region = appKitFrame(for: cgRegion) else { return false }
+        ) else { return false }
         return region.contains(mouseLocation)
+    }
+
+    private func appKitControlFrames(actions: Set<WindowAction>) -> [WindowAction: CGRect] {
+        Dictionary(uniqueKeysWithValues: actions.compactMap { action in
+            guard let cgFrame = preparedCGFrames[action], let frame = appKitFrame(for: cgFrame) else { return nil }
+            return (action, frame)
+        })
     }
 
     private func nativeCGFrame(for action: WindowAction) -> CGRect? {
@@ -340,7 +431,9 @@ final class WindowOverlay {
     }
 
     func hide() {
-        presentationProgress = 0
+        isMinimizeDismissalInProgress = false
+        resetPresentationProgress()
+        selectedNearestAction = nil
         lastPresentationUpdate = 0
         presentationState = isSuppressed ? .suppressed : .hidden
         visibleActions.removeAll(keepingCapacity: true)
@@ -358,7 +451,9 @@ final class WindowOverlay {
         minimizeRequestGeneration += 1
         isSuppressed = false
         isEligibleForDisplay = true
-        presentationProgress = 0
+        isMinimizeDismissalInProgress = false
+        resetPresentationProgress()
+        selectedNearestAction = nil
         lastPresentationUpdate = 0
         presentationState = .hidden
     }
@@ -366,9 +461,13 @@ final class WindowOverlay {
     private func hidePanels() {
         hoverResetWorkItem?.cancel()
         hoverResetWorkItem = nil
+        visibleActions.removeAll(keepingCapacity: true)
+        interactiveActions.removeAll(keepingCapacity: true)
+        lastDesiredActions.removeAll(keepingCapacity: true)
         panels.values.forEach { $0.overlayView.resetInteractionState() }
         for panel in panels.values {
             panel.alphaValue = 1
+            panel.ignoresMouseEvents = true
             if panel.isVisible { panel.orderOut(nil) }
         }
     }
@@ -377,7 +476,9 @@ final class WindowOverlay {
         if hovered {
             hoverResetWorkItem?.cancel()
             hoverResetWorkItem = nil
-            panels.values.forEach { $0.overlayView.isGroupHovered = true }
+            for (action, panel) in panels {
+                panel.overlayView.isGroupHovered = interactiveActions.contains(action)
+            }
             return
         }
 
@@ -425,22 +526,51 @@ final class WindowOverlay {
     }
 
     private func performMinimize(using button: AXUIElement) {
-        let actionsToRestore = visibleActions
-        suppressUntilRestored()
+        let actionsToRestore = interactiveActions
+        minimizeRequestGeneration += 1
         let generation = minimizeRequestGeneration
+        isMinimizeDismissalInProgress = true
+        selectedNearestAction = nil
+        interactiveActions.removeAll(keepingCapacity: true)
+        hoverResetWorkItem?.cancel()
+        hoverResetWorkItem = nil
+        panels.values.forEach {
+            $0.ignoresMouseEvents = true
+            $0.overlayView.resetInteractionState()
+        }
+        lastPresentationUpdate = ProcessInfo.processInfo.systemUptime
+        presentationState = .collapsing
 
-        // Give WindowServer one display frame to remove all three overlay panels
-        // before the target application begins its minimize animation.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimizeDispatchDelay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimizeDismissDuration) { [weak self] in
             guard let self, generation == self.minimizeRequestGeneration else { return }
-            if AXUIElementPerformAction(button, kAXPressAction as CFString) != .success {
-                self.restoreFromSuppression()
-                self.availableActions = actionsToRestore.intersection(self.preparedActions)
-                self.presentationProgress = 1
-                self.presentationState = .visible
-                self.renderPresentation(mouseLocation: NSEvent.mouseLocation)
-                NSSound.beep()
+            self.isMinimizeDismissalInProgress = false
+            self.suppressUntilRestored()
+            let suppressionGeneration = self.minimizeRequestGeneration
+
+            // Give WindowServer one display frame to commit the hidden overlay
+            // before the target application begins its minimize animation.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimizeDispatchDelay) { [weak self] in
+                guard let self, suppressionGeneration == self.minimizeRequestGeneration else { return }
+                self.pressMinimizeButton(button, restoring: actionsToRestore)
             }
+        }
+    }
+
+    private func pressMinimizeButton(
+        _ button: AXUIElement,
+        restoring actionsToRestore: Set<WindowAction>
+    ) {
+        if AXUIElementPerformAction(button, kAXPressAction as CFString) != .success {
+            restoreFromSuppression()
+            availableActions = actionsToRestore.intersection(preparedActions)
+            for action in actionsToRestore { presentationProgressByAction[action] = 1 }
+            interactiveActions = actionsToRestore
+            presentationState = .visible
+            renderPresentation(
+                desiredActions: actionsToRestore,
+                mouseLocation: NSEvent.mouseLocation
+            )
+            NSSound.beep()
         }
     }
 

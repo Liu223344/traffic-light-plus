@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-07-16
+
 - Reworked tracking to cover all visible application windows instead of only the frontmost window.
 - Added WindowServer window-ID matching and high-frequency position synchronization during drags.
 - Kept native button centers stable while a window is moving to avoid stale accessibility coordinates.
@@ -13,7 +15,10 @@
 - Hid overlays before minimization begins and restored them only after the window leaves the Dock.
 - Kept WindowServer position and occlusion sampling at a continuous 120 Hz for predictable real-time tracking.
 - Added independently adjustable spacing for the three circular macOS traffic-light controls.
-- Added an enabled-by-default hidden traffic-light mode that reveals enlarged controls near the window corner.
+- Added hidden traffic-light reveal modes for enlarging the full group or only the nearest control.
+- Shrink and hide overlay controls before starting the native minimize animation.
+- Prevented symbol drawing crashes when maximum-size controls animate from native button bounds.
+- Removed application names, window titles, and settings-window geometry from diagnostic logs.
 
 ## 1.0.0 - 2026-07-14
 

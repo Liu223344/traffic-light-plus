@@ -113,4 +113,60 @@ struct ControlLayout {
         return expanding ? min(1, current + delta) : max(0, current - delta)
     }
 
+    static func nearestAction(
+        to point: CGPoint,
+        controlFrames: [WindowAction: CGRect],
+        actions: Set<WindowAction>,
+        currentAction: WindowAction?,
+        hysteresis: CGFloat = 4
+    ) -> WindowAction? {
+        let orderedActions = displayOrder(for: .macOS).filter { actions.contains($0) }
+        let scored = orderedActions.compactMap { action -> (WindowAction, CGFloat, Bool)? in
+            guard let frame = controlFrames[action] else { return nil }
+            let distance = hypot(point.x - frame.midX, point.y - frame.midY)
+            return (action, distance, frame.contains(point))
+        }
+        guard !scored.isEmpty else { return nil }
+
+        let directHits = scored.filter(\.2)
+        if let nearestDirectHit = directHits.min(by: { $0.1 < $1.1 }) {
+            guard let currentAction,
+                  currentAction != nearestDirectHit.0,
+                  let currentHit = directHits.first(where: { $0.0 == currentAction }) else {
+                return nearestDirectHit.0
+            }
+            return nearestDirectHit.1 + hysteresis < currentHit.1
+                ? nearestDirectHit.0
+                : currentAction
+        }
+
+        guard let nearest = scored.min(by: { $0.1 < $1.1 }) else { return nil }
+        guard let currentAction,
+              currentAction != nearest.0,
+              let current = scored.first(where: { $0.0 == currentAction }) else {
+            return nearest.0
+        }
+        return nearest.1 + hysteresis < current.1 ? nearest.0 : currentAction
+    }
+
+    static func revealActions(
+        mode: HiddenTrafficLightRevealMode,
+        pointer: CGPoint,
+        controlFrames: [WindowAction: CGRect],
+        actions: Set<WindowAction>,
+        currentAction: WindowAction?
+    ) -> Set<WindowAction> {
+        switch mode {
+        case .group:
+            return actions
+        case .nearest:
+            return nearestAction(
+                to: pointer,
+                controlFrames: controlFrames,
+                actions: actions,
+                currentAction: currentAction
+            ).map { Set([$0]) } ?? []
+        }
+    }
+
 }

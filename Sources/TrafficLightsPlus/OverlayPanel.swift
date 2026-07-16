@@ -177,10 +177,10 @@ final class OverlayButtonView: NSView {
     }
 
     private func drawSymbol(in rect: NSRect) {
-        let inset = style == .macOS ? controlSize * 0.31 : controlSize * 0.32
-        let symbolRect = rect.insetBy(dx: inset, dy: inset)
+        guard let symbolRect = Self.symbolRect(in: rect, style: style) else { return }
+        let visualSize = min(rect.width, rect.height)
         let path = NSBezierPath()
-        path.lineWidth = max(1.2, controlSize * 0.055)
+        path.lineWidth = max(1.0, visualSize * 0.055)
         path.lineCapStyle = .round
 
         NSColor.labelColor.withAlphaComponent(isControlEnabled ? 0.82 : 0.36).setStroke()
@@ -201,6 +201,19 @@ final class OverlayButtonView: NSView {
             return
         }
         path.stroke()
+    }
+
+    static func symbolRect(in rect: NSRect, style: ControlStyle) -> NSRect? {
+        let visualSize = min(rect.width, rect.height)
+        guard visualSize.isFinite, visualSize > 2,
+              rect.minX.isFinite, rect.minY.isFinite else { return nil }
+        let inset = visualSize * (style == .macOS ? 0.31 : 0.32)
+        let symbolRect = rect.insetBy(dx: inset, dy: inset)
+        guard !symbolRect.isNull,
+              symbolRect.minX.isFinite, symbolRect.minY.isFinite,
+              symbolRect.width.isFinite, symbolRect.height.isFinite,
+              symbolRect.width > 0, symbolRect.height > 0 else { return nil }
+        return symbolRect
     }
 }
 

@@ -17,6 +17,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(preferences.spacing == 0)
         #expect(preferences.style == .macOS)
         #expect(preferences.hiddenTrafficLightsEnabled)
+        #expect(preferences.hiddenTrafficLightRevealMode == .nearest)
         #expect(!preferences.showInFullScreen)
         #expect(preferences.closeBehavior == .closeWindow)
         #expect(preferences.minimizeBehavior == .minimizeWindow)
@@ -32,6 +33,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         preferences.spacing = 12
         preferences.style = .edgeSquares
         preferences.hiddenTrafficLightsEnabled = false
+        preferences.hiddenTrafficLightRevealMode = .group
         preferences.showInFullScreen = true
         preferences.closeBehavior = .quitApplication
         preferences.minimizeBehavior = .hideApplication
@@ -43,10 +45,18 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(restored.spacing == 12)
         #expect(restored.style == .edgeSquares)
         #expect(!restored.hiddenTrafficLightsEnabled)
+        #expect(restored.hiddenTrafficLightRevealMode == .group)
         #expect(restored.showInFullScreen)
         #expect(restored.closeBehavior == .quitApplication)
         #expect(restored.minimizeBehavior == .hideApplication)
         #expect(restored.zoomBehavior == .doNothing)
+    }
+}
+
+@Test func corruptStoredRevealModeFallsBackToNearest() {
+    withDefaults { defaults in
+        defaults.set("unknown", forKey: "hiddenTrafficLightRevealMode")
+        #expect(Preferences(defaults: defaults).hiddenTrafficLightRevealMode == .nearest)
     }
 }
 
