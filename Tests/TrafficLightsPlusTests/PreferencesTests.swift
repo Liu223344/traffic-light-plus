@@ -11,7 +11,8 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
 
 @Test func preferenceDefaultsAreUsable() {
     withDefaults { defaults in
-        let preferences = Preferences(defaults: defaults)
+        let preferences = Preferences(defaults: defaults, preferredLanguages: ["zh-Hans-CN"])
+        #expect(preferences.language == .simplifiedChinese)
         #expect(preferences.enabled)
         #expect(preferences.size == 28)
         #expect(preferences.spacing == 0)
@@ -28,11 +29,52 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
 }
 
 @Test func recommendedHiddenTrafficLightCopyIsStable() {
-    #expect(SettingsView.hiddenTrafficLightsTitle == "隐藏式红绿灯（推荐）")
-    #expect(SettingsView.fullScreenOptionTitle == "在全屏窗口中显示（开发中）")
-    #expect(SettingsView.dockClickMinimizeTitle == "再次点击 Dock 应用图标时最小化当前窗口")
-    #expect(HiddenTrafficLightRevealMode.group.title == "整组")
-    #expect(HiddenTrafficLightRevealMode.nearest.title == "单个（推荐）")
+    #expect(AppLocalization.string(.overlayEnabled, language: .simplifiedChinese) == "放大红绿灯")
+    #expect(AppLocalization.string(.overlayEnabled, language: .english) == "Enlarged Traffic Lights")
+    #expect(AppLocalization.string(.hiddenTrafficLights, language: .simplifiedChinese) == "隐藏式红绿灯（推荐）")
+    #expect(AppLocalization.string(.hiddenTrafficLights, language: .english) == "Hidden Traffic Lights (Recommended)")
+    #expect(AppLocalization.string(.dockClickMinimize, language: .simplifiedChinese) == "Dock 栏最小化")
+    #expect(AppLocalization.string(.dockClickMinimize, language: .english) == "Dock Click to Minimize")
+    #expect(HiddenTrafficLightRevealMode.group.title(language: .english) == "Group")
+    #expect(HiddenTrafficLightRevealMode.nearest.title(language: .english) == "Single (Recommended)")
+}
+
+@Test func systemLanguageSelectionMapsChineseToSimplifiedChineseAndOthersToEnglish() {
+    #expect(AppLanguage.systemDefault(preferredLanguages: ["zh-Hans-CN"]) == .simplifiedChinese)
+    #expect(AppLanguage.systemDefault(preferredLanguages: ["zh-Hant-TW"]) == .simplifiedChinese)
+    #expect(AppLanguage.systemDefault(preferredLanguages: ["en-US"]) == .english)
+    #expect(AppLanguage.systemDefault(preferredLanguages: ["fr-FR"]) == .english)
+    #expect(AppLanguage.systemDefault(preferredLanguages: []) == .english)
+}
+
+@Test func languagePreferencePersistsAndCorruptValuesFollowTheSystem() {
+    withDefaults { defaults in
+        let preferences = Preferences(defaults: defaults, preferredLanguages: ["en-US"])
+        #expect(preferences.language == .english)
+
+        preferences.language = .simplifiedChinese
+        #expect(Preferences(defaults: defaults, preferredLanguages: ["en-US"]).language == .simplifiedChinese)
+
+        defaults.set("unknown", forKey: "appLanguage")
+        let recovered = Preferences(defaults: defaults, preferredLanguages: ["en-US"])
+        #expect(recovered.language == .english)
+        #expect(defaults.string(forKey: "appLanguage") == AppLanguage.english.rawValue)
+    }
+}
+
+@Test func bothLocalizationTablesContainEveryApplicationString() {
+    #expect(AppLocalization.missingKeys(for: .simplifiedChinese).isEmpty)
+    #expect(AppLocalization.missingKeys(for: .english).isEmpty)
+}
+
+@Test func dockClickFeatureCanStayEnabledWhileOverlaysAreDisabled() {
+    withDefaults { defaults in
+        let preferences = Preferences(defaults: defaults)
+        preferences.enabled = false
+
+        #expect(!preferences.enabled)
+        #expect(preferences.dockClickMinimizesActiveWindow)
+    }
 }
 
 @Test func fullScreenPreferenceIsDisabledWhileTheFeatureIsInDevelopment() {
@@ -49,6 +91,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
 @Test func preferencesPersist() {
     withDefaults { defaults in
         let preferences = Preferences(defaults: defaults)
+        preferences.language = .english
         preferences.enabled = false
         preferences.size = 42
         preferences.spacing = 12
@@ -65,6 +108,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         )
 
         let restored = Preferences(defaults: defaults)
+        #expect(restored.language == .english)
         #expect(!restored.enabled)
         #expect(restored.size == 42)
         #expect(restored.spacing == 12)

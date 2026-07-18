@@ -179,17 +179,34 @@ final class WindowTracker {
         let application = AXUIElementCreateApplication(pid)
         let focusedWindow: AXUIElement? = copyAttribute(kAXFocusedWindowAttribute as CFString, from: application)
         let mainWindow: AXUIElement? = copyAttribute(kAXMainWindowAttribute as CFString, from: application)
-        guard let window = focusedWindow ?? mainWindow else { return false }
-        let minimized: Bool = copyAttribute(kAXMinimizedAttribute as CFString, from: window) ?? false
-        guard !minimized else { return false }
+        let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: application) ?? []
+        let preferredWindows = uniqueElements([focusedWindow, mainWindow].compactMap { $0 } + windows)
+        guard let window = preferredWindows.first(where: { window in
+            let minimized: Bool = copyAttribute(kAXMinimizedAttribute as CFString, from: window) ?? false
+            return !minimized && canMinimize(window)
+        }) else { return false }
 
         let key = AXWindowKey(pid: pid, element: window)
-        if let overlay = overlays[key], overlay.minimizeWindow() { return true }
+        let overlay = overlays[key]
+        if Self.shouldUseOverlayMinimize(
+            overlaysEnabled: preferences.enabled,
+            overlayAvailable: overlay != nil
+        ), overlay?.minimizeWindow() == true {
+            return true
+        }
+
+        logger.debug("Dock minimize using direct Accessibility path")
 
         if let button: AXUIElement = copyAttribute(kAXMinimizeButtonAttribute as CFString, from: window),
            copyAttribute(kAXEnabledAttribute as CFString, from: button) ?? true {
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard AXUIElementPerformAction(button, kAXPressAction as CFString) != .success else { return }
+                _ = AXUIElementSetAttributeValue(
+                    window,
+                    kAXMinimizedAttribute as CFString,
+                    kCFBooleanTrue
+                )
+                self?.logger.error("Dock minimize button action failed; used AXMinimized fallback")
             }
             return true
         }
@@ -208,6 +225,10 @@ final class WindowTracker {
             )
         }
         return true
+    }
+
+    static func shouldUseOverlayMinimize(overlaysEnabled: Bool, overlayAvailable: Bool) -> Bool {
+        overlaysEnabled && overlayAvailable
     }
 
     @discardableResult
@@ -242,6 +263,27 @@ final class WindowTracker {
             }
         }
         return true
+    }
+
+    private func canMinimize(_ window: AXUIElement) -> Bool {
+        if let button: AXUIElement = copyAttribute(kAXMinimizeButtonAttribute as CFString, from: window),
+           copyAttribute(kAXEnabledAttribute as CFString, from: button) ?? true {
+            return true
+        }
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(
+            window,
+            kAXMinimizedAttribute as CFString,
+            &settable
+        ) == .success && settable.boolValue
+    }
+
+    private func uniqueElements(_ elements: [AXUIElement]) -> [AXUIElement] {
+        var result: [AXUIElement] = []
+        for element in elements where !result.contains(where: { CFEqual($0, element) }) {
+            result.append(element)
+        }
+        return result
     }
 
     private func ensureObservedApplication(pid: pid_t, element: AXUIElement) {

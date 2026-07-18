@@ -192,6 +192,7 @@ final class WindowOverlay {
             let behavior = configuredBehaviors[action] ?? ButtonBehavior.defaultBehavior(for: action)
             panel.overlayView.style = preferences.style
             panel.overlayView.controlSize = controlSize
+            panel.overlayView.language = preferences.language
             panel.overlayView.behavior = behavior
             panel.overlayView.isControlEnabled = isBehaviorEnabled(behavior, buttons: buttons)
             panel.overlayView.isWindowActive = isActiveWindow

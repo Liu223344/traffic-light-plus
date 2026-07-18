@@ -1,16 +1,23 @@
 import AppKit
 import SwiftUI
 import ApplicationServices
+import Combine
 import OSLog
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private enum MenuTag { static let enabled = 100 }
+    private enum MenuTag {
+        static let settings = 99
+        static let overlaysEnabled = 100
+        static let dockClickEnabled = 101
+        static let quit = 102
+    }
     private let logger = Logger(subsystem: "app.trafficlightsplus.mac", category: "lifecycle")
     private let preferences = Preferences()
     private var tracker: WindowTracker?
     private var dockClickController: DockClickController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var subscriptions = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.notice("Application finished launching")
@@ -26,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         configureStatusItem()
+        preferences.$language
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] language in self?.applyLanguage(language) }
+            .store(in: &subscriptions)
         DispatchQueue.main.async { [weak self] in self?.showSettings() }
 
         if !AXIsProcessTrusted() {
@@ -47,15 +59,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
-        menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        let settingsItem = menu.addItem(
+            withTitle: localized(.menuSettings),
+            action: #selector(showSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.tag = MenuTag.settings
+        settingsItem.target = self
         menu.addItem(NSMenuItem.separator())
-        let toggle = NSMenuItem(title: "启用", action: #selector(toggleEnabled(_:)), keyEquivalent: "")
-        toggle.tag = MenuTag.enabled
-        toggle.target = self
-        toggle.state = preferences.enabled ? .on : .off
-        menu.addItem(toggle)
+        let overlayToggle = NSMenuItem(
+            title: localized(.menuEnableOverlays),
+            action: #selector(toggleOverlaysEnabled(_:)),
+            keyEquivalent: ""
+        )
+        overlayToggle.tag = MenuTag.overlaysEnabled
+        overlayToggle.target = self
+        overlayToggle.state = preferences.enabled ? .on : .off
+        menu.addItem(overlayToggle)
+        let dockClickToggle = NSMenuItem(
+            title: localized(.menuEnableDockClick),
+            action: #selector(toggleDockClickEnabled(_:)),
+            keyEquivalent: ""
+        )
+        dockClickToggle.tag = MenuTag.dockClickEnabled
+        dockClickToggle.target = self
+        dockClickToggle.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
+        menu.addItem(dockClickToggle)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "退出 Traffic Lights+", action: #selector(quit), keyEquivalent: "q").target = self
+        let quitItem = menu.addItem(
+            withTitle: localized(.menuQuit),
+            action: #selector(quit),
+            keyEquivalent: "q"
+        )
+        quitItem.tag = MenuTag.quit
+        quitItem.target = self
         item.menu = menu
         statusItem = item
     }
@@ -72,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             window.contentViewController = controller
             window.setContentSize(NSSize(width: 480, height: 680))
-            window.title = "Traffic Lights+ 设置"
+            window.title = localized(.settingsWindowTitle)
             window.isReleasedWhenClosed = false
             window.tabbingMode = .disallowed
             window.delegate = self
@@ -88,13 +125,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func toggleEnabled(_ sender: NSMenuItem) {
+    @objc private func toggleOverlaysEnabled(_ sender: NSMenuItem) {
         preferences.enabled.toggle()
         sender.state = preferences.enabled ? .on : .off
     }
 
+    @objc private func toggleDockClickEnabled(_ sender: NSMenuItem) {
+        preferences.dockClickMinimizesActiveWindow.toggle()
+        sender.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func applyLanguage(_ language: AppLanguage) {
+        statusItem?.menu?.item(withTag: MenuTag.settings)?.title = localized(.menuSettings, language: language)
+        statusItem?.menu?.item(withTag: MenuTag.overlaysEnabled)?.title = localized(
+            .menuEnableOverlays,
+            language: language
+        )
+        statusItem?.menu?.item(withTag: MenuTag.dockClickEnabled)?.title = localized(
+            .menuEnableDockClick,
+            language: language
+        )
+        statusItem?.menu?.item(withTag: MenuTag.quit)?.title = localized(.menuQuit, language: language)
+        settingsWindow?.title = localized(.settingsWindowTitle, language: language)
+    }
+
+    private func localized(_ key: AppString, language: AppLanguage? = nil) -> String {
+        AppLocalization.string(key, language: language ?? preferences.language)
     }
 
     private func minimizeWindowFromDock(pid: pid_t) -> Bool {
@@ -119,7 +179,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.item(withTag: MenuTag.enabled)?.state = preferences.enabled ? .on : .off
+        applyLanguage(preferences.language)
+        menu.item(withTag: MenuTag.overlaysEnabled)?.state = preferences.enabled ? .on : .off
+        menu.item(withTag: MenuTag.dockClickEnabled)?.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
     }
 }
 

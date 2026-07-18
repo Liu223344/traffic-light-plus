@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-07-18
+
+- Added an in-app Simplified Chinese and English language selector with immediate interface updates.
 - Added an option to minimize the active window when its already-frontmost application's Dock icon is clicked again.
+- Decoupled Dock click handling from the enlarged traffic-light switch and added independent settings and menu-bar toggles.
+- Prevented independent Dock minimization from reusing stale overlay controls after enlarged traffic lights are disabled.
+- Left minimized-window restoration to macOS while Stage Manager is enabled, preserving its window-group restore behavior.
 - Worked around the macOS Dock restore flash by intercepting minimized-app icon clicks and restoring the window directly through Accessibility.
 - Fixed overlay suppression recovery when Stage Manager omits the window deminiaturized accessibility notification.
 

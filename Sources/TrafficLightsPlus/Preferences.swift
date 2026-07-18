@@ -4,10 +4,10 @@ enum ControlStyle: String, CaseIterable {
     case macOS
     case edgeSquares
 
-    var title: String {
+    func title(language: AppLanguage) -> String {
         switch self {
-        case .macOS: return "macOS 圆形"
-        case .edgeSquares: return "左侧贴边方块"
+        case .macOS: return AppLocalization.string(.appearanceMacOS, language: language)
+        case .edgeSquares: return AppLocalization.string(.appearanceEdgeSquares, language: language)
         }
     }
 }
@@ -16,10 +16,10 @@ enum HiddenTrafficLightRevealMode: String, CaseIterable {
     case group
     case nearest
 
-    var title: String {
+    func title(language: AppLanguage) -> String {
         switch self {
-        case .group: return "整组"
-        case .nearest: return "单个（推荐）"
+        case .group: return AppLocalization.string(.revealGroup, language: language)
+        case .nearest: return AppLocalization.string(.revealSingle, language: language)
         }
     }
 }
@@ -33,6 +33,7 @@ struct QuitOnCloseApplication: Codable, Hashable, Identifiable {
 
 final class Preferences: ObservableObject {
     private enum Key {
+        static let language = "appLanguage"
         static let enabled = "enabled"
         static let size = "controlSize"
         static let spacing = "controlSpacingAdjustment"
@@ -48,6 +49,10 @@ final class Preferences: ObservableObject {
     }
 
     private let defaults: UserDefaults
+
+    @Published var language: AppLanguage {
+        didSet { defaults.set(language.rawValue, forKey: Key.language) }
+    }
 
     @Published var enabled: Bool {
         didSet { defaults.set(enabled, forKey: Key.enabled) }
@@ -98,8 +103,14 @@ final class Preferences: ObservableObject {
         }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        preferredLanguages: [String] = Locale.preferredLanguages
+    ) {
         self.defaults = defaults
+        let systemLanguage = AppLanguage.systemDefault(preferredLanguages: preferredLanguages)
+        let storedLanguageValue = defaults.object(forKey: Key.language) as? String
+        let initialLanguage = storedLanguageValue.flatMap(AppLanguage.init(rawValue:)) ?? systemLanguage
         defaults.register(defaults: [
             Key.enabled: true,
             Key.size: 28.0,
@@ -113,6 +124,10 @@ final class Preferences: ObservableObject {
             Key.minimizeBehavior: ButtonBehavior.minimizeWindow.rawValue,
             Key.zoomBehavior: ButtonBehavior.zoomWindow.rawValue
         ])
+        language = initialLanguage
+        if storedLanguageValue != nil, AppLanguage(rawValue: storedLanguageValue ?? "") == nil {
+            defaults.set(initialLanguage.rawValue, forKey: Key.language)
+        }
         enabled = defaults.bool(forKey: Key.enabled)
         size = min(max(defaults.double(forKey: Key.size), ControlLayout.sizeRange.lowerBound), ControlLayout.sizeRange.upperBound)
         spacing = min(

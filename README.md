@@ -34,6 +34,7 @@ Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗
 - 再次点击当前前台应用的 Dock 图标时，可最小化该应用的当前窗口。
 - 可分别把红、黄、绿按钮设置为关闭窗口、退出应用、最小化、缩放、隐藏应用或无操作。
 - 支持所有可见普通窗口和多显示器；全屏窗口支持仍在开发中。
+- 设置界面支持简体中文和英文，可在应用内即时切换。
 - 设置即时生效并通过 `UserDefaults` 保存在本机。
 - 无网络请求、无分析统计、无广告和账号系统。
 
@@ -56,11 +57,12 @@ Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗
 
 Traffic Lights+ 启动后常驻菜单栏。设置页可以调整：
 
-- 总开关、尺寸、外观和圆形按钮间距；
+- 放大红绿灯开关、尺寸、外观和圆形按钮间距；
 - 隐藏式红绿灯及“整组/单个”放大方式；
 - 红、黄、绿三个按钮各自的操作；
 - “在全屏窗口中显示（开发中）”当前不可勾选。
-- 再次点击 Dock 应用图标时最小化当前窗口。
+- 独立的 Dock 开关：再次点击应用图标时最小化当前窗口，无需开启放大红绿灯。
+- “语言 / Language”可在简体中文和英文之间即时切换。
 
 隐藏模式开启时，将鼠标移到窗口左上角红绿灯区域即可显示放大按钮。单个模式会选择距离鼠标最近的可见按钮，按钮被其他窗口遮挡时不会显示或参与选择。
 
@@ -151,6 +153,7 @@ Public builds currently use ad-hoc code signing and are not notarized by Apple. 
 - Click the current frontmost application's Dock icon again to minimize its active window.
 - Configure the red, yellow, and green controls independently to close a window, quit an app, minimize, zoom, hide an app, or do nothing.
 - Supports all visible standard windows and multiple displays. Full-screen window support is still in development.
+- The settings interface supports Simplified Chinese and English with immediate in-app switching.
 - Settings take effect immediately and are stored locally with `UserDefaults`.
 - No network requests, analytics, advertisements, or account system.
 
@@ -173,11 +176,12 @@ Accessibility permission is used only to discover standard window controls, read
 
 Traffic Lights+ remains available in the menu bar after launch. Its settings include:
 
-- the main enable switch, control size, appearance, and circular-control spacing;
+- the enlarged-traffic-light switch, control size, appearance, and circular-control spacing;
 - hidden traffic lights and group/single reveal modes;
 - independent actions for the red, yellow, and green controls;
 - a disabled **Show in full-screen windows (In development)** option.
-- minimizing the active window when its Dock application icon is clicked again.
+- an independent Dock switch that minimizes the active window when its application icon is clicked again, without requiring enlarged traffic lights.
+- a **语言 / Language** selector for switching immediately between Simplified Chinese and English.
 
 When hidden mode is enabled, move the pointer into the traffic-light area in the top-left corner of a window to reveal the enlarged controls. Single mode selects the nearest visible control. Controls covered by another window are neither displayed nor included in selection.
 

@@ -4,19 +4,16 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    static let hiddenTrafficLightsTitle = "隐藏式红绿灯（推荐）"
-    static let fullScreenOptionTitle = "在全屏窗口中显示（开发中）"
-    static let dockClickMinimizeTitle = "再次点击 Dock 应用图标时最小化当前窗口"
-
     @ObservedObject var preferences: Preferences
     @State private var accessibilityGranted = AXIsProcessTrusted()
-    @State private var appSelectionError = ""
     @State private var isShowingAppSelectionError = false
 
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                languageSelector
+                overlayToggle
                 Divider()
                 preview
                 controls
@@ -29,10 +26,10 @@ struct SettingsView: View {
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             accessibilityGranted = AXIsProcessTrusted()
         }
-        .alert("无法添加应用", isPresented: $isShowingAppSelectionError) {
-            Button("好", role: .cancel) {}
+        .alert(localized(.cannotAddApplication), isPresented: $isShowingAppSelectionError) {
+            Button(localized(.ok), role: .cancel) {}
         } message: {
-            Text(appSelectionError)
+            Text(localized(.missingBundleIdentifier))
         }
     }
 
@@ -45,18 +42,44 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Traffic Lights+")
                     .font(.title2.bold())
-                Text("更大、更顺手的窗口控制按钮")
+                Text(localized(.settingsSubtitle))
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Toggle("启用", isOn: $preferences.enabled)
+        }
+    }
+
+    private var languageSelector: some View {
+        HStack(spacing: 12) {
+            Text(localized(.languageLabel))
+                .font(.headline)
+            Spacer()
+            Picker(localized(.languageLabel), selection: $preferences.language) {
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.displayName).tag(language)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 220)
+        }
+    }
+
+    private var overlayToggle: some View {
+        HStack {
+            Text(localized(.overlayEnabled))
+                .font(.headline)
+            Spacer()
+            Toggle("", isOn: $preferences.enabled)
+                .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel(localized(.overlayEnabled))
         }
     }
 
     private var preview: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("实时预览")
+            Text(localized(.livePreview))
                 .font(.headline)
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 7)
@@ -89,21 +112,24 @@ struct SettingsView: View {
                 action: .close,
                 behavior: preferences.closeBehavior,
                 style: preferences.style,
-                size: size
+                size: size,
+                language: preferences.language
             )
                 .frame(width: size, height: size)
             PreviewControl(
                 action: .minimize,
                 behavior: preferences.minimizeBehavior,
                 style: preferences.style,
-                size: size
+                size: size,
+                language: preferences.language
             )
                 .frame(width: size, height: size)
             PreviewControl(
                 action: .zoom,
                 behavior: preferences.zoomBehavior,
                 style: preferences.style,
-                size: size
+                size: size,
+                language: preferences.language
             )
                 .frame(width: size, height: size)
         }
@@ -112,11 +138,11 @@ struct SettingsView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("外观")
+                Text(localized(.appearance))
                     .font(.headline)
-                Picker("外观", selection: $preferences.style) {
+                Picker(localized(.appearance), selection: $preferences.style) {
                     ForEach(ControlStyle.allCases, id: \.self) { style in
-                        Text(style.title).tag(style)
+                        Text(style.title(language: preferences.language)).tag(style)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -125,13 +151,13 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("按钮大小")
+                    Text(localized(.buttonSize))
                         .font(.headline)
                     Spacer()
                     Text("\(Int(preferences.size)) pt")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
-                    Button("恢复默认") { preferences.size = 28 }
+                    Button(localized(.restoreDefault)) { preferences.size = 28 }
                         .buttonStyle(.link)
                 }
                 HStack(spacing: 10) {
@@ -139,7 +165,7 @@ struct SettingsView: View {
                         .font(.system(size: 8))
                         .foregroundStyle(.secondary)
                     Slider(value: $preferences.size, in: ControlLayout.sizeRange, step: 1)
-                        .accessibilityLabel("按钮大小")
+                        .accessibilityLabel(localized(.buttonSize))
                         .accessibilityValue("\(Int(preferences.size)) pt")
                     Image(systemName: "circle.fill")
                         .font(.system(size: 16))
@@ -150,13 +176,13 @@ struct SettingsView: View {
             if preferences.style == .macOS {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("按钮间距")
+                        Text(localized(.buttonSpacing))
                             .font(.headline)
                         Spacer()
                         Text(spacingDescription)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                        Button("恢复系统间距") { preferences.spacing = 0 }
+                        Button(localized(.restoreSystemSpacing)) { preferences.spacing = 0 }
                             .buttonStyle(.link)
                     }
                     HStack(spacing: 10) {
@@ -167,7 +193,7 @@ struct SettingsView: View {
                             in: ControlLayout.spacingAdjustmentRange,
                             step: 1
                         )
-                        .accessibilityLabel("按钮间距")
+                        .accessibilityLabel(localized(.buttonSpacing))
                         .accessibilityValue(spacingDescription)
                         Image(systemName: "arrow.left.and.right")
                             .font(.title3)
@@ -176,43 +202,52 @@ struct SettingsView: View {
                 }
             }
 
-            Toggle(Self.hiddenTrafficLightsTitle, isOn: $preferences.hiddenTrafficLightsEnabled)
+            Toggle(localized(.hiddenTrafficLights), isOn: $preferences.hiddenTrafficLightsEnabled)
 
             if preferences.hiddenTrafficLightsEnabled {
-                Picker("放大方式", selection: $preferences.hiddenTrafficLightRevealMode) {
+                Picker(localized(.revealMode), selection: $preferences.hiddenTrafficLightRevealMode) {
                     ForEach(HiddenTrafficLightRevealMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(mode.title(language: preferences.language)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
 
-            Toggle(Self.fullScreenOptionTitle, isOn: .constant(false))
+            Toggle(localized(.fullScreenInDevelopment), isOn: .constant(false))
                 .disabled(true)
 
-            Toggle(Self.dockClickMinimizeTitle, isOn: $preferences.dockClickMinimizesActiveWindow)
+            HStack {
+                Text(localized(.dockClickMinimize))
+                    .font(.headline)
+                Spacer()
+                Toggle("", isOn: $preferences.dockClickMinimizesActiveWindow)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help(localized(.dockClickMinimizeHelp))
+                    .accessibilityLabel(localized(.dockClickMinimize))
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("按钮功能")
+                    Text(localized(.buttonActions))
                         .font(.headline)
                     Spacer()
-                    Button("恢复默认") { preferences.resetButtonBehaviors() }
+                    Button(localized(.restoreDefault)) { preferences.resetButtonBehaviors() }
                         .buttonStyle(.link)
                 }
                 behaviorRow(
-                    title: "红色按钮",
+                    title: localized(.redButton),
                     color: Color(red: 1.0, green: 0.37255, blue: 0.34118),
                     selection: $preferences.closeBehavior
                 )
                 behaviorRow(
-                    title: "黄色按钮",
+                    title: localized(.yellowButton),
                     color: Color(red: 0.99608, green: 0.73725, blue: 0.18039),
                     selection: $preferences.minimizeBehavior
                 )
                 behaviorRow(
-                    title: "绿色按钮",
+                    title: localized(.greenButton),
                     color: Color(red: 0.15686, green: 0.78431, blue: 0.25098),
                     selection: $preferences.zoomBehavior
                 )
@@ -227,19 +262,19 @@ struct SettingsView: View {
     private var quitOnCloseApplications: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("关闭时退出的应用")
+                Text(localized(.quitOnCloseApplications))
                     .font(.headline)
                 Spacer()
                 Button(action: chooseQuitOnCloseApplication) {
                     Image(systemName: "plus")
                 }
                 .buttonStyle(.borderless)
-                .help("添加应用")
-                .accessibilityLabel("添加关闭时退出的应用")
+                .help(localized(.addApplication))
+                .accessibilityLabel(localized(.addApplicationAccessibility))
             }
 
             if preferences.quitOnCloseApplications.isEmpty {
-                Text("尚未添加应用")
+                Text(localized(.noApplicationsAdded))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(preferences.quitOnCloseApplications) { application in
@@ -266,8 +301,11 @@ struct SettingsView: View {
                             Image(systemName: "minus.circle")
                         }
                         .buttonStyle(.borderless)
-                        .help("从名单中移除")
-                        .accessibilityLabel("移除 \(application.displayName)")
+                        .help(localized(.removeApplication))
+                        .accessibilityLabel(localized(
+                            .removeApplicationAccessibility,
+                            arguments: application.displayName
+                        ))
                     }
                 }
             }
@@ -276,7 +314,7 @@ struct SettingsView: View {
 
     private var spacingDescription: String {
         let spacing = Int(preferences.spacing)
-        if spacing == 0 { return "系统" }
+        if spacing == 0 { return localized(.systemSpacing) }
         return spacing > 0 ? "+\(spacing) pt" : "\(spacing) pt"
     }
 
@@ -293,7 +331,7 @@ struct SettingsView: View {
             Spacer()
             Picker(title, selection: selection) {
                 ForEach(ButtonBehavior.allCases) { behavior in
-                    Text(behavior.title).tag(behavior)
+                    Text(behavior.title(language: preferences.language)).tag(behavior)
                 }
             }
             .labelsHidden()
@@ -307,15 +345,15 @@ struct SettingsView: View {
                 Circle()
                     .fill(accessibilityGranted ? Color.green : Color.orange)
                     .frame(width: 9, height: 9)
-                Text(accessibilityGranted ? "辅助功能权限已开启" : "需要辅助功能权限才能控制窗口")
+                Text(localized(accessibilityGranted ? .accessibilityGranted : .accessibilityRequired))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !accessibilityGranted {
-                    Button("打开辅助功能设置") { requestAccessibility() }
+                    Button(localized(.openAccessibilitySettings)) { requestAccessibility() }
                 }
             }
             if !accessibilityGranted {
-                Text("若列表中没有本应用，请点击“+”并选择 Traffic Lights Plus.app。")
+                Text(localized(.accessibilityInstructions))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -332,8 +370,8 @@ struct SettingsView: View {
 
     private func chooseQuitOnCloseApplication() {
         let panel = NSOpenPanel()
-        panel.title = "选择关闭时退出的应用"
-        panel.prompt = "添加"
+        panel.title = localized(.chooseQuitOnCloseApplication)
+        panel.prompt = localized(.addPickerPrompt)
         panel.allowedContentTypes = [.applicationBundle]
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -343,7 +381,6 @@ struct SettingsView: View {
         guard let bundle = Bundle(url: url),
               let bundleIdentifier = bundle.bundleIdentifier,
               !bundleIdentifier.isEmpty else {
-            appSelectionError = "所选应用没有可识别的 Bundle ID。"
             isShowingAppSelectionError = true
             return
         }
@@ -366,6 +403,10 @@ struct SettingsView: View {
         return NSImage(systemSymbolName: "app", accessibilityDescription: application.displayName)
             ?? NSImage(size: NSSize(width: 28, height: 28))
     }
+
+    private func localized(_ key: AppString, arguments: CVarArg...) -> String {
+        AppLocalization.string(key, language: preferences.language, arguments: arguments)
+    }
 }
 
 private struct PreviewControl: NSViewRepresentable {
@@ -373,6 +414,7 @@ private struct PreviewControl: NSViewRepresentable {
     let behavior: ButtonBehavior
     let style: ControlStyle
     let size: CGFloat
+    let language: AppLanguage
 
     func makeNSView(context: Context) -> OverlayButtonView {
         OverlayButtonView(action: action)
@@ -381,6 +423,7 @@ private struct PreviewControl: NSViewRepresentable {
     func updateNSView(_ view: OverlayButtonView, context: Context) {
         view.style = style
         view.controlSize = size
+        view.language = language
         view.behavior = behavior
         view.isWindowActive = true
         view.needsDisplay = true

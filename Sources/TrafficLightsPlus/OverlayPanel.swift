@@ -10,10 +10,12 @@ final class OverlayButtonView: NSView {
     let action: WindowAction
     var behavior: ButtonBehavior {
         didSet {
-            toolTip = behavior.title
-            setAccessibilityLabel(behavior.accessibilityLabel)
+            updateLocalizedMetadata()
             needsDisplay = true
         }
+    }
+    var language: AppLanguage = .simplifiedChinese {
+        didSet { updateLocalizedMetadata() }
     }
     var style: ControlStyle = .macOS { didSet { needsDisplay = true } }
     var controlSize: CGFloat = 28 { didSet { needsDisplay = true } }
@@ -49,9 +51,8 @@ final class OverlayButtonView: NSView {
         self.action = action
         behavior = ButtonBehavior.defaultBehavior(for: action)
         super.init(frame: .zero)
-        toolTip = behavior.title
         setAccessibilityRole(.button)
-        setAccessibilityLabel(behavior.accessibilityLabel)
+        updateLocalizedMetadata()
     }
 
     @available(*, unavailable)
@@ -132,6 +133,12 @@ final class OverlayButtonView: NSView {
         if style != .macOS || isPointerHighlightVisible {
             drawSymbol(in: rect)
         }
+    }
+
+    private func updateLocalizedMetadata() {
+        let title = behavior.title(language: language)
+        toolTip = title
+        setAccessibilityLabel(title)
     }
 
     private func edgeSquarePath(in rect: NSRect) -> NSBezierPath {

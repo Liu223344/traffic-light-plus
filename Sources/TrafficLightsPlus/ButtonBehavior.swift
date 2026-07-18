@@ -10,18 +10,16 @@ enum ButtonBehavior: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    func title(language: AppLanguage) -> String {
         switch self {
-        case .closeWindow: return "关闭窗口"
-        case .quitApplication: return "退出当前应用"
-        case .minimizeWindow: return "最小化窗口"
-        case .zoomWindow: return "缩放窗口"
-        case .hideApplication: return "隐藏当前应用"
-        case .doNothing: return "无操作"
+        case .closeWindow: return AppLocalization.string(.behaviorCloseWindow, language: language)
+        case .quitApplication: return AppLocalization.string(.behaviorQuitApplication, language: language)
+        case .minimizeWindow: return AppLocalization.string(.behaviorMinimizeWindow, language: language)
+        case .zoomWindow: return AppLocalization.string(.behaviorZoomWindow, language: language)
+        case .hideApplication: return AppLocalization.string(.behaviorHideApplication, language: language)
+        case .doNothing: return AppLocalization.string(.behaviorDoNothing, language: language)
         }
     }
-
-    var accessibilityLabel: String { title }
 
     var nativeWindowAction: WindowAction? {
         switch self {

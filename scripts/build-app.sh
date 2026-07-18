@@ -19,6 +19,7 @@ esac
 TRIPLE="$TARGET_ARCH-apple-macosx13.0"
 SCRATCH="$ROOT/.build/$TARGET_ARCH"
 APP_BINARY="$SCRATCH/$TARGET_ARCH-apple-macosx/release/TrafficLightsPlus"
+RESOURCE_BUNDLE="$SCRATCH/$TARGET_ARCH-apple-macosx/release/TrafficLightsPlus_TrafficLightsPlus.bundle"
 
 cd "$ROOT"
 export CLANG_MODULE_CACHE_PATH="$ROOT/.build/ModuleCache"
@@ -30,6 +31,10 @@ swift build -c release \
     --cache-path "$ROOT/.build/SwiftPMCache"
 
 lipo "$APP_BINARY" -verify_arch "$TARGET_ARCH"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
+    echo "Missing localization resource bundle: $RESOURCE_BUNDLE" >&2
+    exit 1
+fi
 
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET" "$ROOT/Resources"
@@ -40,6 +45,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$APP_BINARY" "$APP/Contents/MacOS/TrafficLightsPlus"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+cp -R "$ROOT/Sources/TrafficLightsPlus/Resources/zh-Hans.lproj" "$APP/Contents/Resources/"
+cp -R "$ROOT/Sources/TrafficLightsPlus/Resources/en.lproj" "$APP/Contents/Resources/"
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     codesign --force --deep --options runtime --timestamp=none --sign - \

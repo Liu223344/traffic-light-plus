@@ -60,6 +60,17 @@ import Testing
     #expect(!panel.overlayView.isPointerHighlightVisible)
 }
 
+@MainActor
+@Test func overlayTooltipUpdatesWhenLanguageChanges() {
+    let panel = OverlayPanel(action: .close)
+    panel.overlayView.behavior = .quitApplication
+    panel.overlayView.language = .simplifiedChinese
+    #expect(panel.overlayView.toolTip == "退出当前应用")
+
+    panel.overlayView.language = .english
+    #expect(panel.overlayView.toolTip == "Quit Current Application")
+}
+
 @Test func zoomMenuEligibilityRequiresZoomBehaviorAndActiveSupportedControl() {
     #expect(WindowOverlay.zoomMenuHoverDelay == 0.5)
     #expect(WindowOverlay.shouldOfferZoomMenu(

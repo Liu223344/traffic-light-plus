@@ -84,7 +84,8 @@ final class DockClickController {
         clickedBundleIdentifier: String?,
         frontmostBundleIdentifier: String?,
         hasVisibleWindow: Bool,
-        hasMinimizedWindow: Bool
+        hasMinimizedWindow: Bool,
+        allowRestoreInterception: Bool
     ) -> DockClickIntent? {
         guard featureEnabled, let clickedBundleIdentifier else { return nil }
         if hasVisibleWindow,
@@ -92,12 +93,12 @@ final class DockClickController {
            clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame {
             return .minimize
         }
-        if !hasVisibleWindow, hasMinimizedWindow { return .restore }
+        if allowRestoreInterception, !hasVisibleWindow, hasMinimizedWindow { return .restore }
         return nil
     }
 
     fileprivate func handleEvent(type: CGEventType, event: CGEvent) -> Bool {
-        let featureEnabled = preferences.enabled && preferences.dockClickMinimizesActiveWindow
+        let featureEnabled = preferences.dockClickMinimizesActiveWindow
         guard featureEnabled else {
             candidate = nil
             return false
@@ -123,7 +124,8 @@ final class DockClickController {
                 clickedBundleIdentifier: clickedBundleIdentifier,
                 frontmostBundleIdentifier: frontmostApplication?.bundleIdentifier,
                 hasVisibleWindow: state.hasVisibleWindow,
-                hasMinimizedWindow: state.hasMinimizedWindow
+                hasMinimizedWindow: state.hasMinimizedWindow,
+                allowRestoreInterception: !stageManagerIsEnabled()
             ) else {
                 candidate = nil
                 return false
@@ -231,10 +233,24 @@ final class DockClickController {
     private func windowState(pid: pid_t) -> (hasVisibleWindow: Bool, hasMinimizedWindow: Bool) {
         let application = AXUIElementCreateApplication(pid)
         let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: application) ?? []
+        let focusedWindow: AXUIElement? = copyAttribute(kAXFocusedWindowAttribute as CFString, from: application)
+        let mainWindow: AXUIElement? = copyAttribute(kAXMainWindowAttribute as CFString, from: application)
+        let hasActiveUnminimizedWindow = [focusedWindow, mainWindow].compactMap { $0 }.contains {
+            !(copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false)
+        }
         let hasMinimizedWindow = windows.contains {
             copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
         }
-        return (hasOnScreenWindow(pid: pid), hasMinimizedWindow)
+        return (hasActiveUnminimizedWindow && hasOnScreenWindow(pid: pid), hasMinimizedWindow)
+    }
+
+    private func stageManagerIsEnabled() -> Bool {
+        let applicationID = "com.apple.WindowManager" as CFString
+        CFPreferencesAppSynchronize(applicationID)
+        return (CFPreferencesCopyAppValue(
+            "GloballyEnabled" as CFString,
+            applicationID
+        ) as? NSNumber)?.boolValue ?? false
     }
 
     private func hasOnScreenWindow(pid: pid_t) -> Bool {
