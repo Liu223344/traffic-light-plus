@@ -210,6 +210,40 @@ final class WindowTracker {
         return true
     }
 
+    @discardableResult
+    func restoreMinimizedWindow(of pid: pid_t) -> Bool {
+        let applicationElement = AXUIElementCreateApplication(pid)
+        let focusedWindow: AXUIElement? = copyAttribute(
+            kAXFocusedWindowAttribute as CFString,
+            from: applicationElement
+        )
+        let mainWindow: AXUIElement? = copyAttribute(
+            kAXMainWindowAttribute as CFString,
+            from: applicationElement
+        )
+        let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: applicationElement) ?? []
+        let preferredWindows = [focusedWindow, mainWindow].compactMap { $0 } + windows
+        guard let window = preferredWindows.first(where: {
+            copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
+        }), let application = NSRunningApplication(processIdentifier: pid) else { return false }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = AXUIElementSetAttributeValue(
+                window,
+                kAXMinimizedAttribute as CFString,
+                kCFBooleanFalse
+            )
+            guard result == .success else { return }
+            DispatchQueue.main.async {
+                application.activate(options: [.activateIgnoringOtherApps])
+                DispatchQueue.global(qos: .userInitiated).async {
+                    _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                }
+            }
+        }
+        return true
+    }
+
     private func ensureObservedApplication(pid: pid_t, element: AXUIElement) {
         guard applications[pid] == nil else { return }
         var observerRef: AXObserver?

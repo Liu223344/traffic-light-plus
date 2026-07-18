@@ -13,9 +13,14 @@ private func dockClickEventTapCallback(
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         controller.reenableEventTap()
     } else {
-        controller.handleEvent(type: type, event: event)
+        if controller.handleEvent(type: type, event: event) { return nil }
     }
     return Unmanaged.passUnretained(event)
+}
+
+enum DockClickIntent {
+    case minimize
+    case restore
 }
 
 struct DockClickCandidate {
@@ -23,6 +28,7 @@ struct DockClickCandidate {
     let bundleIdentifier: String
     let location: CGPoint
     let timestamp: TimeInterval
+    let intent: DockClickIntent
 
     func matches(bundleIdentifier: String?, location: CGPoint, timestamp: TimeInterval) -> Bool {
         guard let bundleIdentifier,
@@ -41,6 +47,7 @@ final class DockClickController {
 
     private let preferences: Preferences
     private let minimizeHandler: (pid_t) -> Bool
+    private let restoreHandler: (pid_t) -> Bool
     private let logger = Logger(subsystem: "app.trafficlightsplus.mac", category: "dock-click")
     private let systemWideElement = AXUIElementCreateSystemWide()
     private var eventTap: CFMachPort?
@@ -48,9 +55,14 @@ final class DockClickController {
     private var retryTimer: Timer?
     private var candidate: DockClickCandidate?
 
-    init(preferences: Preferences, minimizeHandler: @escaping (pid_t) -> Bool) {
+    init(
+        preferences: Preferences,
+        minimizeHandler: @escaping (pid_t) -> Bool,
+        restoreHandler: @escaping (pid_t) -> Bool
+    ) {
         self.preferences = preferences
         self.minimizeHandler = minimizeHandler
+        self.restoreHandler = restoreHandler
         installEventTapIfPossible()
         if eventTap == nil {
             retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -67,23 +79,28 @@ final class DockClickController {
         if let eventTap { CFMachPortInvalidate(eventTap) }
     }
 
-    static func shouldTrackClick(
+    static func clickIntent(
         featureEnabled: Bool,
         clickedBundleIdentifier: String?,
         frontmostBundleIdentifier: String?,
-        hasUnminimizedWindow: Bool
-    ) -> Bool {
-        guard featureEnabled, hasUnminimizedWindow,
-              let clickedBundleIdentifier,
-              let frontmostBundleIdentifier else { return false }
-        return clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame
+        hasVisibleWindow: Bool,
+        hasMinimizedWindow: Bool
+    ) -> DockClickIntent? {
+        guard featureEnabled, let clickedBundleIdentifier else { return nil }
+        if hasVisibleWindow,
+           let frontmostBundleIdentifier,
+           clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame {
+            return .minimize
+        }
+        if !hasVisibleWindow, hasMinimizedWindow { return .restore }
+        return nil
     }
 
-    fileprivate func handleEvent(type: CGEventType, event: CGEvent) {
+    fileprivate func handleEvent(type: CGEventType, event: CGEvent) -> Bool {
         let featureEnabled = preferences.enabled && preferences.dockClickMinimizesActiveWindow
         guard featureEnabled else {
             candidate = nil
-            return
+            return false
         }
 
         let location = event.location
@@ -92,38 +109,59 @@ final class DockClickController {
         case .leftMouseDown:
             let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
             let frontmostApplication = NSWorkspace.shared.frontmostApplication
-            let hasUnminimizedWindow = frontmostApplication.map {
-                hasUnminimizedFocusedWindow(pid: $0.processIdentifier)
-            } ?? false
-            guard Self.shouldTrackClick(
+            guard let clickedBundleIdentifier,
+                  let clickedApplication = runningApplication(
+                    bundleIdentifier: clickedBundleIdentifier,
+                    preferredPID: frontmostApplication?.processIdentifier
+                  ) else {
+                candidate = nil
+                return false
+            }
+            let state = windowState(pid: clickedApplication.processIdentifier)
+            guard let intent = Self.clickIntent(
                 featureEnabled: featureEnabled,
                 clickedBundleIdentifier: clickedBundleIdentifier,
                 frontmostBundleIdentifier: frontmostApplication?.bundleIdentifier,
-                hasUnminimizedWindow: hasUnminimizedWindow
-            ), let clickedBundleIdentifier, let frontmostApplication else {
+                hasVisibleWindow: state.hasVisibleWindow,
+                hasMinimizedWindow: state.hasMinimizedWindow
+            ) else {
                 candidate = nil
-                return
+                return false
             }
             candidate = DockClickCandidate(
-                pid: frontmostApplication.processIdentifier,
+                pid: clickedApplication.processIdentifier,
+                bundleIdentifier: clickedBundleIdentifier,
+                location: location,
+                timestamp: timestamp,
+                intent: intent
+            )
+            logger.debug("Dock click intent: \(intent == .restore ? "restore" : "minimize", privacy: .public)")
+            return intent == .restore
+        case .leftMouseUp:
+            guard let candidate else { return false }
+            self.candidate = nil
+            let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
+            let matches = candidate.matches(
                 bundleIdentifier: clickedBundleIdentifier,
                 location: location,
                 timestamp: timestamp
             )
-        case .leftMouseUp:
-            guard let candidate else { return }
-            self.candidate = nil
-            let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
-            guard candidate.matches(
-                bundleIdentifier: clickedBundleIdentifier,
-                location: location,
-                timestamp: timestamp
-            ) else { return }
-            DispatchQueue.main.async { [weak self] in
-                _ = self?.minimizeHandler(candidate.pid)
+            guard matches else { return candidate.intent == .restore }
+            switch candidate.intent {
+            case .minimize:
+                DispatchQueue.main.async { [weak self] in
+                    _ = self?.minimizeHandler(candidate.pid)
+                }
+                return false
+            case .restore:
+                logger.debug("Restoring minimized window without Dock animation path")
+                DispatchQueue.main.async { [weak self] in
+                    _ = self?.restoreHandler(candidate.pid)
+                }
+                return true
             }
         default:
-            break
+            return false
         }
     }
 
@@ -180,13 +218,39 @@ final class DockClickController {
         return Bundle(url: url)?.bundleIdentifier
     }
 
-    private func hasUnminimizedFocusedWindow(pid: pid_t) -> Bool {
+    private func runningApplication(bundleIdentifier: String, preferredPID: pid_t?) -> NSRunningApplication? {
+        let applications = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .filter { !$0.isTerminated }
+        if let preferredPID,
+           let preferred = applications.first(where: { $0.processIdentifier == preferredPID }) {
+            return preferred
+        }
+        return applications.first
+    }
+
+    private func windowState(pid: pid_t) -> (hasVisibleWindow: Bool, hasMinimizedWindow: Bool) {
         let application = AXUIElementCreateApplication(pid)
-        let focusedWindow: AXUIElement? = copyAttribute(kAXFocusedWindowAttribute as CFString, from: application)
-        let mainWindow: AXUIElement? = copyAttribute(kAXMainWindowAttribute as CFString, from: application)
-        guard let window = focusedWindow ?? mainWindow else { return false }
-        let minimized: Bool = copyAttribute(kAXMinimizedAttribute as CFString, from: window) ?? false
-        return !minimized
+        let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: application) ?? []
+        let hasMinimizedWindow = windows.contains {
+            copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
+        }
+        return (hasOnScreenWindow(pid: pid), hasMinimizedWindow)
+    }
+
+    private func hasOnScreenWindow(pid: pid_t) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return false }
+        return windows.contains { info in
+            guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                  (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  ((info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0.01,
+                  let bounds = info[kCGWindowBounds as String] as? [String: NSNumber],
+                  let width = bounds["Width"]?.doubleValue,
+                  let height = bounds["Height"]?.doubleValue else { return false }
+            return width > 40 && height > 40
+        }
     }
 
     private func copyAttribute<T>(_ attribute: CFString, from element: AXUIElement) -> T? {

@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Added an option to minimize the active window when its already-frontmost application's Dock icon is clicked again.
-- Prevented a minimized window from flashing or being minimized again when its Dock icon is clicked to restore it.
+- Worked around the macOS Dock restore flash by intercepting minimized-app icon clicks and restoring the window directly through Accessibility.
 - Fixed overlay suppression recovery when Stage Manager omits the window deminiaturized accessibility notification.
 
 ## 1.2.0 - 2026-07-17

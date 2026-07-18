@@ -2,31 +2,35 @@ import CoreGraphics
 import Testing
 @testable import TrafficLightsPlus
 
-@Test func dockClickTrackingRequiresTheAlreadyFrontmostApplication() {
-    #expect(DockClickController.shouldTrackClick(
+@Test func dockClickIntentDistinguishesMinimizeRestoreAndNormalActivation() {
+    #expect(DockClickController.clickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
         frontmostBundleIdentifier: "COM.EXAMPLE.EDITOR",
-        hasUnminimizedWindow: true
-    ))
-    #expect(!DockClickController.shouldTrackClick(
+        hasVisibleWindow: true,
+        hasMinimizedWindow: false
+    ) == .minimize)
+    #expect(DockClickController.clickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
-        frontmostBundleIdentifier: "com.example.Browser",
-        hasUnminimizedWindow: true
-    ))
-    #expect(!DockClickController.shouldTrackClick(
+        frontmostBundleIdentifier: "com.example.Editor",
+        hasVisibleWindow: false,
+        hasMinimizedWindow: true
+    ) == .restore)
+    #expect(DockClickController.clickIntent(
         featureEnabled: false,
         clickedBundleIdentifier: "com.example.Editor",
         frontmostBundleIdentifier: "com.example.Editor",
-        hasUnminimizedWindow: true
-    ))
-    #expect(!DockClickController.shouldTrackClick(
+        hasVisibleWindow: false,
+        hasMinimizedWindow: true
+    ) == nil)
+    #expect(DockClickController.clickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
-        frontmostBundleIdentifier: "com.example.Editor",
-        hasUnminimizedWindow: false
-    ))
+        frontmostBundleIdentifier: "com.example.Browser",
+        hasVisibleWindow: true,
+        hasMinimizedWindow: false
+    ) == nil)
 }
 
 @Test func dockClickCandidateRejectsDragsAndDifferentDockItems() {
@@ -34,7 +38,8 @@ import Testing
         pid: 42,
         bundleIdentifier: "com.example.Editor",
         location: CGPoint(x: 100, y: 800),
-        timestamp: 10
+        timestamp: 10,
+        intent: .minimize
     )
 
     #expect(candidate.matches(

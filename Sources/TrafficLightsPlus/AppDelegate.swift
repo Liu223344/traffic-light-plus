@@ -16,9 +16,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logger.notice("Application finished launching")
         NSApp.setActivationPolicy(.accessory)
         tracker = WindowTracker(preferences: preferences)
-        dockClickController = DockClickController(preferences: preferences) { [weak self] pid in
-            self?.minimizeWindowFromDock(pid: pid) ?? false
-        }
+        dockClickController = DockClickController(
+            preferences: preferences,
+            minimizeHandler: { [weak self] pid in
+                self?.minimizeWindowFromDock(pid: pid) ?? false
+            },
+            restoreHandler: { [weak self] pid in
+                self?.restoreWindowFromDock(pid: pid) ?? false
+            }
+        )
         configureStatusItem()
         DispatchQueue.main.async { [weak self] in self?.showSettings() }
 
@@ -98,6 +104,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         return tracker?.minimizeFocusedWindow(of: pid) ?? false
+    }
+
+    private func restoreWindowFromDock(pid: pid_t) -> Bool {
+        if pid == ProcessInfo.processInfo.processIdentifier {
+            guard let settingsWindow, settingsWindow.isMiniaturized else { return false }
+            settingsWindow.deminiaturize(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return true
+        }
+        return tracker?.restoreMinimizedWindow(of: pid) ?? false
     }
 }
 
