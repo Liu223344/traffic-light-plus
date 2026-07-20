@@ -18,6 +18,11 @@
 "fullscreen.in_development" = "Show in Full-Screen Windows (In Development)";
 "dock_click.title" = "Dock Click to Minimize";
 "dock_click.help" = "Minimize the active window when you click its Dock icon again";
+"software_updates.title" = "Software Updates";
+"software_updates.automatic_check" = "Automatically Check for Updates";
+"software_updates.automatic_download" = "Automatically Download Updates";
+"software_updates.check_now" = "Check for Updates…";
+"software_updates.unavailable" = "Software updates are unavailable in this build.";
 "button_actions.title" = "Button Actions";
 "button.red" = "Red Button";
 "button.yellow" = "Yellow Button";
@@ -28,7 +33,9 @@
 "behavior.zoom_window" = "Zoom Window";
 "behavior.hide_application" = "Hide Current Application";
 "behavior.do_nothing" = "Do Nothing";
-"quit_on_close.title" = "Applications to Quit on Close";
+"quit_on_close.enabled" = "Quit Apps on Close";
+"quit_on_close.help" = "Quit listed apps when a native window closes, even when Enlarged Traffic Lights is off";
+"quit_on_close.title" = "Application List";
 "quit_on_close.add" = "Add Application";
 "quit_on_close.add.accessibility" = "Add an application to quit on close";
 "quit_on_close.empty" = "No applications added";

@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import ApplicationServices
 import Combine
 import OSLog
 
@@ -9,10 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let settings = 99
         static let overlaysEnabled = 100
         static let dockClickEnabled = 101
-        static let quit = 102
+        static let checkForUpdates = 102
+        static let quit = 103
     }
     private let logger = Logger(subsystem: "app.trafficlightsplus.mac", category: "lifecycle")
     private let preferences = Preferences()
+    private let updateController = UpdateController()
     private var tracker: WindowTracker?
     private var dockClickController: DockClickController?
     private var statusItem: NSStatusItem?
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.notice("Application finished launching")
         NSApp.setActivationPolicy(.accessory)
+        updateController.start()
         tracker = WindowTracker(preferences: preferences)
         dockClickController = DockClickController(
             preferences: preferences,
@@ -38,14 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] language in self?.applyLanguage(language) }
             .store(in: &subscriptions)
-        DispatchQueue.main.async { [weak self] in self?.showSettings() }
-
-        if !AXIsProcessTrusted() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-                _ = AXIsProcessTrustedWithOptions(options)
-            }
-        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -86,6 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dockClickToggle.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
         menu.addItem(dockClickToggle)
         menu.addItem(NSMenuItem.separator())
+        let checkForUpdatesItem = menu.addItem(
+            withTitle: localized(.checkForUpdates),
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.tag = MenuTag.checkForUpdates
+        checkForUpdatesItem.target = self
+        checkForUpdatesItem.isEnabled = updateController.canCheckForUpdates
+        menu.addItem(NSMenuItem.separator())
         let quitItem = menu.addItem(
             withTitle: localized(.menuQuit),
             action: #selector(quit),
@@ -100,7 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() {
         logger.notice("Showing settings window")
         if settingsWindow == nil {
-            let controller = NSHostingController(rootView: SettingsView(preferences: preferences))
+            let controller = NSHostingController(rootView: SettingsView(
+                preferences: preferences,
+                updateController: updateController
+            ))
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 480, height: 680),
                 styleMask: [.titled, .closable],
@@ -135,6 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sender.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
     }
 
+    @objc private func checkForUpdates() {
+        updateController.checkForUpdates()
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -147,6 +157,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         statusItem?.menu?.item(withTag: MenuTag.dockClickEnabled)?.title = localized(
             .menuEnableDockClick,
+            language: language
+        )
+        statusItem?.menu?.item(withTag: MenuTag.checkForUpdates)?.title = localized(
+            .checkForUpdates,
             language: language
         )
         statusItem?.menu?.item(withTag: MenuTag.quit)?.title = localized(.menuQuit, language: language)
@@ -168,8 +182,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func restoreWindowFromDock(pid: pid_t) -> Bool {
         if pid == ProcessInfo.processInfo.processIdentifier {
-            guard let settingsWindow, settingsWindow.isMiniaturized else { return false }
-            settingsWindow.deminiaturize(nil)
+            guard let settingsWindow else { return false }
+            if settingsWindow.isMiniaturized {
+                settingsWindow.deminiaturize(nil)
+            } else {
+                settingsWindow.makeKeyAndOrderFront(nil)
+            }
             NSApp.activate(ignoringOtherApps: true)
             return true
         }
@@ -182,6 +200,7 @@ extension AppDelegate: NSMenuDelegate {
         applyLanguage(preferences.language)
         menu.item(withTag: MenuTag.overlaysEnabled)?.state = preferences.enabled ? .on : .off
         menu.item(withTag: MenuTag.dockClickEnabled)?.state = preferences.dockClickMinimizesActiveWindow ? .on : .off
+        menu.item(withTag: MenuTag.checkForUpdates)?.isEnabled = updateController.canCheckForUpdates
     }
 }
 

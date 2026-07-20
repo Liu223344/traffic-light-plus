@@ -181,11 +181,11 @@ final class WindowOverlay {
         preparedActions.removeAll(keepingCapacity: true)
         for action in WindowAction.allCases {
             guard let panel = panels[action], let cgFrame = frames[action], buttons[action] != nil else {
-                panels[action]?.orderOut(nil)
+                if let panel = panels[action], panel.isVisible { panel.orderOut(nil) }
                 continue
             }
             guard let origin = appKitOrigin(forCGPoint: cgFrame.origin, size: cgFrame.size) else {
-                panel.orderOut(nil)
+                if panel.isVisible { panel.orderOut(nil) }
                 continue
             }
 
@@ -204,7 +204,7 @@ final class WindowOverlay {
 
         availableActions.formIntersection(preparedActions)
         for action in WindowAction.allCases where !preparedActions.contains(action) {
-            panels[action]?.orderOut(nil)
+            if let panel = panels[action], panel.isVisible { panel.orderOut(nil) }
             visibleActions.remove(action)
         }
         return !preparedActions.isEmpty
@@ -246,18 +246,13 @@ final class WindowOverlay {
         self.hiddenModeEnabled = hiddenModeEnabled
         self.revealMode = revealMode
         guard !isSuppressed, isEligibleForDisplay else {
-            presentationState = .suppressed
-            resetPresentationProgress()
-            hidePanels()
+            _ = transitionToHiddenState(isSuppressed ? .suppressed : .hidden)
             return
         }
 
         availableActions = actions.intersection(preparedActions)
         guard !availableActions.isEmpty else {
-            presentationState = .hidden
-            selectedNearestAction = nil
-            resetPresentationProgress()
-            hidePanels()
+            _ = transitionToHiddenState(.hidden)
             return
         }
 
@@ -468,15 +463,25 @@ final class WindowOverlay {
         return nil
     }
 
-    func hide() {
+    @discardableResult
+    func hide() -> Bool {
+        let hiddenState: OverlayPresentationState = isSuppressed ? .suppressed : .hidden
+        return transitionToHiddenState(hiddenState)
+    }
+
+    private func transitionToHiddenState(_ hiddenState: OverlayPresentationState) -> Bool {
+        guard presentationState != hiddenState || panels.values.contains(where: \.isVisible) else {
+            return false
+        }
         isMinimizeDismissalInProgress = false
         minimizeDismissalStartFrames.removeAll(keepingCapacity: true)
         resetPresentationProgress()
         selectedNearestAction = nil
         lastPresentationUpdate = 0
-        presentationState = isSuppressed ? .suppressed : .hidden
+        presentationState = hiddenState
         visibleActions.removeAll(keepingCapacity: true)
         hidePanels()
+        return true
     }
 
     func suppressUntilRestored() {

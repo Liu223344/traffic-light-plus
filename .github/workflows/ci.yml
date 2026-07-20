@@ -17,9 +17,9 @@ jobs:
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
       - name: Test
-        run: swift test
+        run: swift test -Xswiftc -warnings-as-errors
       - name: Build release app
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -28,3 +28,20 @@ jobs:
         run: lipo "build/Traffic Lights Plus.app/Contents/MacOS/TrafficLightsPlus" -verify_arch "${{ matrix.arch }}"
       - name: Verify signature
         run: codesign --verify --deep --strict "build/Traffic Lights Plus.app"
+      - name: Verify Sparkle integration
+        run: |
+          test -d "build/Traffic Lights Plus.app/Contents/Frameworks/Sparkle.framework"
+          test "$(plutil -extract SUFeedURL raw "build/Traffic Lights Plus.app/Contents/Info.plist")" = \
+            "https://liu223344.github.io/traffic-light-plus/appcast-${{ matrix.arch }}.xml"
+
+  sanitizers:
+    name: ${{ matrix.sanitizer }} Sanitizer
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test
+        run: swift test --sanitize=${{ matrix.sanitizer }}

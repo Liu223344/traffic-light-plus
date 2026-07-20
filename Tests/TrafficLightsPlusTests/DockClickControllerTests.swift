@@ -45,6 +45,63 @@ import Testing
     ) == nil)
 }
 
+@Test func stageManagerRestoreUsesWindowVisibilityBeforeTheDockHandlesTheClick() {
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: false,
+        hadVisibleWindowAtMouseDown: false,
+        hasVisibleWindowAfterDock: false,
+        hasMinimizedWindowAfterDock: true
+    ) == .restore)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: false,
+        hadVisibleWindowAtMouseDown: true,
+        hasVisibleWindowAfterDock: true,
+        hasMinimizedWindowAfterDock: false
+    ) == .minimize)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: false,
+        hadVisibleWindowAtMouseDown: false,
+        hasVisibleWindowAfterDock: true,
+        hasMinimizedWindowAfterDock: false
+    ) == nil)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Browser",
+        wasMinimizedByDock: false,
+        hadVisibleWindowAtMouseDown: false,
+        hasVisibleWindowAfterDock: false,
+        hasMinimizedWindowAfterDock: true
+    ) == .restore)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: false,
+        hadVisibleWindowAtMouseDown: true,
+        hasVisibleWindowAfterDock: false,
+        hasMinimizedWindowAfterDock: true
+    ) == .restore)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: true,
+        hadVisibleWindowAtMouseDown: true,
+        hasVisibleWindowAfterDock: true,
+        hasMinimizedWindowAfterDock: false
+    ) == .restore)
+}
+
 @Test func dockClickCandidateRejectsDragsAndDifferentDockItems() {
     let candidate = DockClickCandidate(
         pid: 42,
@@ -105,6 +162,46 @@ import Testing
     #expect(!offScreen.hasVisibleWindow)
 }
 
+@Test func dockClickHandlingSkipsDesktopBeforeAccessibilityHitTesting() {
+    let dockFrame = CGRect(x: 100, y: 800, width: 600, height: 80)
+
+    #expect(DockClickController.handlingMode(
+        featureEnabled: true,
+        stageManagerEnabled: true,
+        location: CGPoint(x: 400, y: 400),
+        dockFrame: dockFrame
+    ) == .ignore)
+    #expect(DockClickController.handlingMode(
+        featureEnabled: true,
+        stageManagerEnabled: true,
+        location: CGPoint(x: 400, y: 840),
+        dockFrame: dockFrame
+    ) == .observeOnly)
+    #expect(DockClickController.handlingMode(
+        featureEnabled: true,
+        stageManagerEnabled: false,
+        location: CGPoint(x: 400, y: 840),
+        dockFrame: dockFrame
+    ) == .intercept)
+    #expect(DockClickController.handlingMode(
+        featureEnabled: false,
+        stageManagerEnabled: false,
+        location: CGPoint(x: 400, y: 840),
+        dockFrame: dockFrame
+    ) == .ignore)
+    #expect(DockClickController.handlingMode(
+        featureEnabled: true,
+        stageManagerEnabled: false,
+        location: CGPoint(x: 400, y: 840),
+        dockFrame: nil
+    ) == .ignore)
+}
+
+@Test func stageManagerUsesANonBlockingEventTap() {
+    #expect(DockClickController.eventTapOptions(stageManagerEnabled: true) == .listenOnly)
+    #expect(DockClickController.eventTapOptions(stageManagerEnabled: false) == .defaultTap)
+}
+
 @Test func dockMinimizeNeverUsesStaleOverlaysWhenTrafficLightsAreDisabled() {
     #expect(WindowTracker.shouldUseOverlayMinimize(
         overlaysEnabled: true,
@@ -117,5 +214,23 @@ import Testing
     #expect(!WindowTracker.shouldUseOverlayMinimize(
         overlaysEnabled: true,
         overlayAvailable: false
+    ))
+}
+
+@Test func windowTrackingStopsOnlyWhenBothIndependentFeaturesAreInactive() {
+    #expect(WindowTracker.shouldTrackWindows(
+        overlaysEnabled: true,
+        quitOnCloseEnabled: false,
+        hasQuitOnCloseApplications: false
+    ))
+    #expect(WindowTracker.shouldTrackWindows(
+        overlaysEnabled: false,
+        quitOnCloseEnabled: true,
+        hasQuitOnCloseApplications: true
+    ))
+    #expect(!WindowTracker.shouldTrackWindows(
+        overlaysEnabled: false,
+        quitOnCloseEnabled: true,
+        hasQuitOnCloseApplications: false
     ))
 }

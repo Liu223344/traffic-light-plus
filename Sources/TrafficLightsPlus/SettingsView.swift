@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
+    @ObservedObject var updateController: UpdateController
     @State private var accessibilityGranted = AXIsProcessTrusted()
     @State private var isShowingAppSelectionError = false
 
@@ -230,6 +231,10 @@ struct SettingsView: View {
                     .accessibilityLabel(localized(.dockClickMinimize))
             }
 
+            quitOnCloseApplications
+
+            softwareUpdates
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(localized(.buttonActions))
@@ -255,8 +260,37 @@ struct SettingsView: View {
                 )
             }
 
-            if preferences.hasCloseWindowBehavior {
-                quitOnCloseApplications
+        }
+    }
+
+    private var softwareUpdates: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(localized(.softwareUpdates))
+                .font(.headline)
+            Toggle(
+                localized(.automaticallyCheckForUpdates),
+                isOn: Binding(
+                    get: { updateController.automaticallyChecksForUpdates },
+                    set: updateController.setAutomaticallyChecksForUpdates
+                )
+            )
+            .disabled(!updateController.updaterAvailable)
+            Toggle(
+                localized(.automaticallyDownloadUpdates),
+                isOn: Binding(
+                    get: { updateController.automaticallyDownloadsUpdates },
+                    set: updateController.setAutomaticallyDownloadsUpdates
+                )
+            )
+            .disabled(!updateController.automaticDownloadsControlEnabled)
+            Button(action: updateController.checkForUpdates) {
+                Label(localized(.checkForUpdates), systemImage: "arrow.clockwise")
+            }
+            .disabled(!updateController.canCheckForUpdates)
+            if !updateController.updaterAvailable {
+                Text(localized(.updatesUnavailable))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -264,50 +298,63 @@ struct SettingsView: View {
     private var quitOnCloseApplications: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(localized(.quitOnCloseApplications))
+                Text(localized(.quitOnCloseEnabled))
                     .font(.headline)
                 Spacer()
-                Button(action: chooseQuitOnCloseApplication) {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .help(localized(.addApplication))
-                .accessibilityLabel(localized(.addApplicationAccessibility))
+                Toggle("", isOn: $preferences.quitOnCloseEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help(localized(.quitOnCloseHelp))
+                    .accessibilityLabel(localized(.quitOnCloseEnabled))
             }
 
-            if preferences.quitOnCloseApplications.isEmpty {
-                Text(localized(.noApplicationsAdded))
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(preferences.quitOnCloseApplications) { application in
-                    HStack(spacing: 10) {
-                        Image(nsImage: icon(for: application))
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 28, height: 28)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(application.displayName)
-                                .lineLimit(1)
-                            Text(application.bundleIdentifier)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+            if preferences.quitOnCloseEnabled {
+                HStack {
+                    Text(localized(.quitOnCloseApplications))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button(action: chooseQuitOnCloseApplication) {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(localized(.addApplication))
+                    .accessibilityLabel(localized(.addApplicationAccessibility))
+                }
+
+                if preferences.quitOnCloseApplications.isEmpty {
+                    Text(localized(.noApplicationsAdded))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(preferences.quitOnCloseApplications) { application in
+                        HStack(spacing: 10) {
+                            Image(nsImage: icon(for: application))
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 28, height: 28)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(application.displayName)
+                                    .lineLimit(1)
+                                Text(application.bundleIdentifier)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            Spacer()
+                            Button {
+                                preferences.removeQuitOnCloseApplication(
+                                    bundleIdentifier: application.bundleIdentifier
+                                )
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .help(localized(.removeApplication))
+                            .accessibilityLabel(localized(
+                                .removeApplicationAccessibility,
+                                arguments: application.displayName
+                            ))
                         }
-                        Spacer()
-                        Button {
-                            preferences.removeQuitOnCloseApplication(
-                                bundleIdentifier: application.bundleIdentifier
-                            )
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.borderless)
-                        .help(localized(.removeApplication))
-                        .accessibilityLabel(localized(
-                            .removeApplicationAccessibility,
-                            arguments: application.displayName
-                        ))
                     }
                 }
             }

@@ -9,6 +9,8 @@ for ARCH in arm64 x86_64; do
     STAGE="$ROOT/.build/dmg-root-$ARCH"
     DMG="$ROOT/build/Traffic-Lights-Plus-$VERSION-$ARCH.dmg"
 
+    mkdir -p "$ROOT/build"
+    rm -f "$DMG"
     TARGET_ARCH="$ARCH" APP_OUTPUT="$APP" "$ROOT/scripts/build-app.sh"
 
     rm -rf "$STAGE"

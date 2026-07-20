@@ -2,8 +2,19 @@
 
 ## Unreleased
 
+## 1.4.0 - 2026-07-20
+
+- Added an independent quit-on-close switch that works with native window controls when enlarged traffic lights are disabled.
+- Prevented Stage Manager desktop clicks from being blocked by Dock observation and repeated hidden-panel updates.
+- Fixed Stage Manager Dock clicks failing to restore minimized windows or immediately minimizing them again.
+- Prevented Stage Manager desktop and window-group clicks from entering the synchronous Dock event interception path.
 - Fixed repeated Dock clicks being ignored when an application temporarily omits its focused or main Accessibility window.
 - Recovered safely from non-finite button size or spacing values in damaged preferences.
+- Added Sparkle 2.9.2 with automatic update checks and background downloads enabled by default.
+- Added bilingual software-update settings and a menu-bar command for immediate update checks.
+- Added architecture-specific HTTPS appcasts with EdDSA-signed ZIP updates for arm64 and x86_64.
+- Added strict Sparkle framework embedding, rpath, architecture, entitlement, and code-signing validation.
+- Added a stable-release workflow that validates release assets before atomically deploying appcasts through GitHub Pages.
 
 ## 1.3.0 - 2026-07-18
 

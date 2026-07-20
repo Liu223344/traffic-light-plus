@@ -21,6 +21,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(preferences.hiddenTrafficLightRevealMode == .nearest)
         #expect(!preferences.showInFullScreen)
         #expect(preferences.dockClickMinimizesActiveWindow)
+        #expect(preferences.quitOnCloseEnabled)
         #expect(preferences.closeBehavior == .closeWindow)
         #expect(preferences.minimizeBehavior == .minimizeWindow)
         #expect(preferences.zoomBehavior == .zoomWindow)
@@ -35,6 +36,8 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     #expect(AppLocalization.string(.hiddenTrafficLights, language: .english) == "Hidden Traffic Lights (Recommended)")
     #expect(AppLocalization.string(.dockClickMinimize, language: .simplifiedChinese) == "Dock 栏最小化")
     #expect(AppLocalization.string(.dockClickMinimize, language: .english) == "Dock Click to Minimize")
+    #expect(AppLocalization.string(.quitOnCloseEnabled, language: .simplifiedChinese) == "关闭时退出应用")
+    #expect(AppLocalization.string(.quitOnCloseEnabled, language: .english) == "Quit Apps on Close")
     #expect(HiddenTrafficLightRevealMode.group.title(language: .english) == "Group")
     #expect(HiddenTrafficLightRevealMode.nearest.title(language: .english) == "Single (Recommended)")
 }
@@ -77,6 +80,45 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     }
 }
 
+@Test func quitOnCloseFeatureCanStayEnabledWhileOverlaysAreDisabled() {
+    withDefaults { defaults in
+        let preferences = Preferences(defaults: defaults)
+        preferences.enabled = false
+        preferences.addQuitOnCloseApplication(
+            bundleIdentifier: "com.example.editor",
+            displayName: "Editor"
+        )
+
+        #expect(!preferences.enabled)
+        #expect(preferences.quitOnCloseEnabled)
+        #expect(preferences.shouldQuitOnClose(bundleIdentifier: "com.example.editor"))
+        #expect(WindowTracker.shouldTrackWindows(
+            overlaysEnabled: preferences.enabled,
+            quitOnCloseEnabled: preferences.quitOnCloseEnabled,
+            hasQuitOnCloseApplications: !preferences.quitOnCloseApplications.isEmpty
+        ))
+    }
+}
+
+@Test func disablingQuitOnCloseKeepsTheListWithoutApplyingIt() {
+    withDefaults { defaults in
+        let preferences = Preferences(defaults: defaults)
+        preferences.addQuitOnCloseApplication(
+            bundleIdentifier: "com.example.editor",
+            displayName: "Editor"
+        )
+        preferences.quitOnCloseEnabled = false
+
+        #expect(!preferences.shouldQuitOnClose(bundleIdentifier: "com.example.editor"))
+        #expect(preferences.quitOnCloseApplications.count == 1)
+        #expect(!WindowTracker.shouldTrackWindows(
+            overlaysEnabled: false,
+            quitOnCloseEnabled: preferences.quitOnCloseEnabled,
+            hasQuitOnCloseApplications: true
+        ))
+    }
+}
+
 @Test func fullScreenPreferenceIsDisabledWhileTheFeatureIsInDevelopment() {
     withDefaults { defaults in
         defaults.set(true, forKey: "showInFullScreen")
@@ -99,6 +141,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         preferences.hiddenTrafficLightsEnabled = false
         preferences.hiddenTrafficLightRevealMode = .group
         preferences.dockClickMinimizesActiveWindow = false
+        preferences.quitOnCloseEnabled = false
         preferences.closeBehavior = .quitApplication
         preferences.minimizeBehavior = .hideApplication
         preferences.zoomBehavior = .doNothing
@@ -117,6 +160,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(restored.hiddenTrafficLightRevealMode == .group)
         #expect(!restored.showInFullScreen)
         #expect(!restored.dockClickMinimizesActiveWindow)
+        #expect(!restored.quitOnCloseEnabled)
         #expect(restored.closeBehavior == .quitApplication)
         #expect(restored.minimizeBehavior == .hideApplication)
         #expect(restored.zoomBehavior == .doNothing)

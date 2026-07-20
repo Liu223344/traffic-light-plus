@@ -55,6 +55,7 @@ final class WindowTracker {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var refreshScheduled = false
     private var lastScanSummary = ""
+    private var quitOnCloseWindowKeys = Set<AXWindowKey>()
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -93,7 +94,13 @@ final class WindowTracker {
 
     func refreshAll() {
         refreshScheduled = false
-        guard preferences.enabled, AXIsProcessTrusted() else {
+        let shouldTrackWindows = Self.shouldTrackWindows(
+            overlaysEnabled: preferences.enabled,
+            quitOnCloseEnabled: preferences.quitOnCloseEnabled,
+            hasQuitOnCloseApplications: !preferences.quitOnCloseApplications.isEmpty
+        )
+        guard shouldTrackWindows, AXIsProcessTrusted() else {
+            quitOnCloseWindowKeys.removeAll(keepingCapacity: true)
             reportScan("disabled or accessibility permission unavailable")
             overlays.values.forEach { $0.hide() }
             return
@@ -101,10 +108,14 @@ final class WindowTracker {
 
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let runningApps = NSWorkspace.shared.runningApplications.filter {
-            !$0.isTerminated && $0.processIdentifier != ownPID && $0.activationPolicy == .regular
+            !$0.isTerminated
+                && $0.processIdentifier != ownPID
+                && $0.activationPolicy == .regular
+                && (preferences.enabled || preferences.shouldQuitOnClose(bundleIdentifier: $0.bundleIdentifier))
         }
         let activePIDs = Set(runningApps.map(\.processIdentifier))
         var seenWindows = Set<AXWindowKey>()
+        var nextQuitOnCloseWindowKeys = Set<AXWindowKey>()
 
         for app in runningApps {
             let pid = app.processIdentifier
@@ -116,9 +127,24 @@ final class WindowTracker {
             for window in windows {
                 let key = AXWindowKey(pid: pid, element: window)
                 seenWindows.insert(key)
+                if applications[pid]?.windowKeys.contains(key) != true {
+                    registerWindowNotifications(for: key)
+                }
+
+                let closeButton: AXUIElement? = copyAttribute(
+                    kAXCloseButtonAttribute as CFString,
+                    from: window
+                )
+                if preferences.shouldQuitOnClose(bundleIdentifier: app.bundleIdentifier), closeButton != nil {
+                    nextQuitOnCloseWindowKeys.insert(key)
+                }
+
+                guard preferences.enabled else {
+                    overlays[key]?.hide()
+                    continue
+                }
                 if overlays[key] == nil {
                     overlays[key] = WindowOverlay(key: key)
-                    registerWindowNotifications(for: key)
                 }
                 if overlays[key]?.update(preferences: preferences) != true {
                     overlays[key]?.hide()
@@ -126,7 +152,11 @@ final class WindowTracker {
             }
         }
 
-        let staleKeys = overlays.keys.filter { !seenWindows.contains($0) }
+        quitOnCloseWindowKeys = nextQuitOnCloseWindowKeys
+        let observedWindowKeys = applications.values.reduce(into: Set<AXWindowKey>()) {
+            $0.formUnion($1.windowKeys)
+        }
+        let staleKeys = Set(overlays.keys).union(observedWindowKeys).filter { !seenWindows.contains($0) }
         for key in staleKeys {
             removeOverlay(for: key)
         }
@@ -135,7 +165,7 @@ final class WindowTracker {
             applications.removeValue(forKey: pid)
         }
         reportScan("apps=\(runningApps.count) windows=\(seenWindows.count) overlays=\(overlays.count)")
-        refreshVisibility()
+        if preferences.enabled { refreshVisibility() }
     }
 
     fileprivate func handleAccessibilityNotification(element: AXUIElement, notification: String) {
@@ -147,26 +177,36 @@ final class WindowTracker {
         case kAXMovedNotification:
             // AX window geometry trails the compositor during an interactive drag.
             // Pull the current WindowServer frame instead of applying a stale AX frame.
-            syncWindowPositions()
+            if preferences.enabled { syncWindowPositions() }
         case kAXResizedNotification:
-            if let overlay = overlays[key] {
+            if preferences.enabled, let overlay = overlays[key] {
                 _ = overlay.update(preferences: preferences, recalibrateNativeCenters: true)
                 syncWindowPositions()
                 refreshVisibility()
-            } else {
+            } else if preferences.enabled {
                 scheduleRefresh()
             }
         case kAXUIElementDestroyedNotification:
+            let shouldQuitApplication = quitOnCloseWindowKeys.remove(key) != nil
             removeOverlay(for: key)
-            refreshVisibility()
+            if preferences.enabled { refreshVisibility() }
+            if shouldQuitApplication,
+               let application = NSRunningApplication(processIdentifier: pid),
+               preferences.shouldQuitOnClose(bundleIdentifier: application.bundleIdentifier),
+               !application.isTerminated {
+                logger.notice("Quitting pid=\(pid, privacy: .public) after a tracked window closed")
+                if !application.terminate() {
+                    logger.error("Unable to quit pid=\(pid, privacy: .public) after window close")
+                }
+            }
         case kAXWindowMiniaturizedNotification:
             overlays[key]?.suppressUntilRestored()
         case kAXWindowDeminiaturizedNotification:
-            if let overlay = overlays[key] {
+            if preferences.enabled, let overlay = overlays[key] {
                 overlay.restoreFromSuppression()
                 _ = overlay.update(preferences: preferences, recalibrateNativeCenters: true)
                 refreshVisibility()
-            } else {
+            } else if preferences.enabled {
                 scheduleRefresh()
             }
         default:
@@ -231,6 +271,14 @@ final class WindowTracker {
         overlaysEnabled && overlayAvailable
     }
 
+    static func shouldTrackWindows(
+        overlaysEnabled: Bool,
+        quitOnCloseEnabled: Bool,
+        hasQuitOnCloseApplications: Bool
+    ) -> Bool {
+        overlaysEnabled || (quitOnCloseEnabled && hasQuitOnCloseApplications)
+    }
+
     @discardableResult
     func restoreMinimizedWindow(of pid: pid_t) -> Bool {
         let applicationElement = AXUIElementCreateApplication(pid)
@@ -244,23 +292,32 @@ final class WindowTracker {
         )
         let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: applicationElement) ?? []
         let preferredWindows = [focusedWindow, mainWindow].compactMap { $0 } + windows
-        guard let window = preferredWindows.first(where: {
-            copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
-        }), let application = NSRunningApplication(processIdentifier: pid) else { return false }
+        guard let application = NSRunningApplication(processIdentifier: pid) else { return false }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = AXUIElementSetAttributeValue(
-                window,
-                kAXMinimizedAttribute as CFString,
-                kCFBooleanFalse
-            )
-            guard result == .success else { return }
-            DispatchQueue.main.async {
-                application.activate(options: [.activateIgnoringOtherApps])
-                DispatchQueue.global(qos: .userInitiated).async {
-                    _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        if let window = preferredWindows.first(where: {
+            copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
+        }) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = AXUIElementSetAttributeValue(
+                    window,
+                    kAXMinimizedAttribute as CFString,
+                    kCFBooleanFalse
+                )
+                guard result == .success else { return }
+                DispatchQueue.main.async {
+                    application.activate(options: [.activateIgnoringOtherApps])
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                    }
                 }
             }
+            return true
+        }
+
+        guard let window = preferredWindows.first else { return false }
+        application.activate(options: [.activateIgnoringOtherApps])
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         }
         return true
     }
@@ -321,6 +378,7 @@ final class WindowTracker {
     }
 
     private func removeOverlay(for key: AXWindowKey) {
+        quitOnCloseWindowKeys.remove(key)
         overlays.removeValue(forKey: key)?.hide()
         guard let app = applications[key.pid] else { return }
         for notification in [

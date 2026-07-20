@@ -42,6 +42,7 @@ final class Preferences: ObservableObject {
         static let hiddenTrafficLightRevealMode = "hiddenTrafficLightRevealMode"
         static let showInFullScreen = "showInFullScreen"
         static let dockClickMinimizesActiveWindow = "dockClickMinimizesActiveWindow"
+        static let quitOnCloseEnabled = "quitOnCloseEnabled"
         static let closeBehavior = "closeButtonBehavior"
         static let minimizeBehavior = "minimizeButtonBehavior"
         static let zoomBehavior = "zoomButtonBehavior"
@@ -84,6 +85,10 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(dockClickMinimizesActiveWindow, forKey: Key.dockClickMinimizesActiveWindow) }
     }
 
+    @Published var quitOnCloseEnabled: Bool {
+        didSet { defaults.set(quitOnCloseEnabled, forKey: Key.quitOnCloseEnabled) }
+    }
+
     @Published var closeBehavior: ButtonBehavior {
         didSet { defaults.set(closeBehavior.rawValue, forKey: Key.closeBehavior) }
     }
@@ -120,6 +125,7 @@ final class Preferences: ObservableObject {
             Key.hiddenTrafficLightRevealMode: HiddenTrafficLightRevealMode.nearest.rawValue,
             Key.showInFullScreen: false,
             Key.dockClickMinimizesActiveWindow: true,
+            Key.quitOnCloseEnabled: true,
             Key.closeBehavior: ButtonBehavior.closeWindow.rawValue,
             Key.minimizeBehavior: ButtonBehavior.minimizeWindow.rawValue,
             Key.zoomBehavior: ButtonBehavior.zoomWindow.rawValue
@@ -139,6 +145,7 @@ final class Preferences: ObservableObject {
         showInFullScreen = false
         defaults.set(false, forKey: Key.showInFullScreen)
         dockClickMinimizesActiveWindow = defaults.bool(forKey: Key.dockClickMinimizesActiveWindow)
+        quitOnCloseEnabled = defaults.bool(forKey: Key.quitOnCloseEnabled)
         closeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.closeBehavior) ?? "") ?? .closeWindow
         minimizeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.minimizeBehavior) ?? "") ?? .minimizeWindow
         zoomBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.zoomBehavior) ?? "") ?? .zoomWindow
@@ -182,7 +189,7 @@ final class Preferences: ObservableObject {
     }
 
     func shouldQuitOnClose(bundleIdentifier: String?) -> Bool {
-        guard let bundleIdentifier else { return false }
+        guard quitOnCloseEnabled, let bundleIdentifier else { return false }
         return quitOnCloseApplications.contains {
             $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
         }

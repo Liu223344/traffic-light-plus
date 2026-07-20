@@ -18,6 +18,11 @@
 "fullscreen.in_development" = "在全屏窗口中显示（开发中）";
 "dock_click.title" = "Dock 栏最小化";
 "dock_click.help" = "再次点击当前应用的 Dock 图标时最小化窗口";
+"software_updates.title" = "软件更新";
+"software_updates.automatic_check" = "自动检查更新";
+"software_updates.automatic_download" = "自动下载更新";
+"software_updates.check_now" = "检查更新…";
+"software_updates.unavailable" = "此构建无法使用软件更新。";
 "button_actions.title" = "按钮功能";
 "button.red" = "红色按钮";
 "button.yellow" = "黄色按钮";
@@ -28,7 +33,9 @@
 "behavior.zoom_window" = "缩放窗口";
 "behavior.hide_application" = "隐藏当前应用";
 "behavior.do_nothing" = "无操作";
-"quit_on_close.title" = "关闭时退出的应用";
+"quit_on_close.enabled" = "关闭时退出应用";
+"quit_on_close.help" = "关闭名单中应用的原生窗口时退出整个应用，即使放大红绿灯已关闭";
+"quit_on_close.title" = "应用名单";
 "quit_on_close.add" = "添加应用";
 "quit_on_close.add.accessibility" = "添加关闭时退出的应用";
 "quit_on_close.empty" = "尚未添加应用";

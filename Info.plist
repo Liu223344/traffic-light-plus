@@ -22,9 +22,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.3.0</string>
+    <string>1.4.0</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -35,5 +35,11 @@
     <true/>
     <key>NSAccessibilityUsageDescription</key>
     <string>用于定位可见窗口的标准按钮，并执行用户配置的关闭、最小化和缩放操作。</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUPublicEDKey</key>
+    <string>eiz9SZ4C/0cljdNMa0/7yweFUbXH+vUTHOoI71DHwrg=</string>
 </dict>
 </plist>

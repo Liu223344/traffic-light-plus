@@ -1,0 +1,149 @@
+name: Publish Sparkle Appcasts
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  appcast:
+    if: github.event.release.draft == false && github.event.release.prerelease == false
+    runs-on: macos-15
+    permissions:
+      contents: read
+      pages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Validate release metadata
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.release.tag_name }}
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
+          build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
+          tag="$RELEASE_TAG_INPUT"
+          [[ "$tag" == "v$version" ]]
+          [[ "$build" == <-> ]]
+          print -r -- "VERSION=$version" >> "$GITHUB_ENV"
+          print -r -- "BUILD_NUMBER=$build" >> "$GITHUB_ENV"
+          print -r -- "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Resolve Sparkle tools
+        run: swift package resolve
+
+      - name: Download release ZIPs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir assets \
+            --pattern "Traffic-Lights-Plus-$VERSION-arm64.zip" \
+            --pattern "Traffic-Lights-Plus-$VERSION-x86_64.zip"
+          [[ $(find assets -maxdepth 1 -name '*.zip' | wc -l | tr -d ' ') == 2 ]]
+
+      - name: Validate release ZIPs
+        run: |
+          chmod +x scripts/validate-release-asset.sh scripts/validate-appcast.sh
+          for arch in arm64 x86_64; do
+            scripts/validate-release-asset.sh \
+              "assets/Traffic-Lights-Plus-$VERSION-$arch.zip" \
+              "$arch" "$VERSION" "$BUILD_NUMBER"
+          done
+
+      - name: Require an increasing build number
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          for arch in arm64 x86_64; do
+            previous=$(mktemp)
+            url="https://liu223344.github.io/traffic-light-plus/appcast-$arch.xml"
+            status=$(curl --silent --show-error --location \
+              --write-out '%{http_code}' --output "$previous" "$url")
+            case "$status" in
+              200)
+                previous_build=$(xmllint --xpath \
+                  'string((//*[local-name()="item"]/*[local-name()="version"])[1])' \
+                  "$previous")
+                [[ "$previous_build" == <-> ]]
+                (( BUILD_NUMBER > previous_build ))
+                ;;
+              404)
+                [[ "$VERSION" == "1.4.0" && "$BUILD_NUMBER" == "5" ]]
+                ;;
+              *)
+                print -u2 -- "Unable to validate previous $arch appcast (HTTP $status)"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Generate signed appcasts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          [[ -n "$SPARKLE_EDDSA_PRIVATE_KEY" ]]
+          tools="$PWD/.build/artifacts/sparkle/Sparkle/bin"
+          key="$RUNNER_TEMP/sparkle-eddsa-private-key"
+          release_body="$RUNNER_TEMP/release-notes.md"
+          print -rn -- "$SPARKLE_EDDSA_PRIVATE_KEY" > "$key"
+          chmod 600 "$key"
+          gh api "repos/$GITHUB_REPOSITORY/releases/${{ github.event.release.id }}" \
+            --jq '.body // ""' > "$release_body"
+          mkdir -p pages
+          touch pages/.nojekyll
+
+          for arch in arm64 x86_64; do
+            archive="Traffic-Lights-Plus-$VERSION-$arch"
+            source_dir="$RUNNER_TEMP/appcast-$arch"
+            mkdir -p "$source_dir"
+            cp "assets/$archive.zip" "$source_dir/$archive.zip"
+            cp "$release_body" "$source_dir/$archive.md"
+            "$tools/generate_appcast" \
+              --ed-key-file "$key" \
+              --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/" \
+              --release-notes-url-prefix "https://liu223344.github.io/traffic-light-plus/" \
+              -o "$PWD/pages/appcast-$arch.xml" \
+              "$source_dir"
+            cp "$source_dir/$archive.md" "pages/$archive.md"
+            SPARKLE_TOOLS_DIR="$tools" scripts/validate-appcast.sh \
+              "pages/appcast-$arch.xml" \
+              "assets/$archive.zip" \
+              "$arch" "$VERSION" "$BUILD_NUMBER" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$archive.zip" \
+              "$key"
+          done
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+
+  deploy:
+    needs: appcast
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

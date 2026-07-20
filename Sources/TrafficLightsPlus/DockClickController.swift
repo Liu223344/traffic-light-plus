@@ -23,6 +23,12 @@ enum DockClickIntent {
     case restore
 }
 
+enum DockClickHandlingMode: Equatable {
+    case ignore
+    case observeOnly
+    case intercept
+}
+
 struct DockClickCandidate {
     let pid: pid_t
     let bundleIdentifier: String
@@ -50,10 +56,24 @@ final class DockClickController {
     private let restoreHandler: (pid_t) -> Bool
     private let logger = Logger(subsystem: "app.trafficlightsplus.mac", category: "dock-click")
     private let systemWideElement = AXUIElementCreateSystemWide()
+    private let dockFrameQueryQueue = DispatchQueue(
+        label: "app.trafficlightsplus.mac.dock-frame",
+        qos: .utility
+    )
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var installedEventTapOptions: CGEventTapOptions?
     private var retryTimer: Timer?
+    private var dockFrameTimer: Timer?
+    private var stageManagerTimer: Timer?
+    private var workspaceObserver: NSObjectProtocol?
     private var candidate: DockClickCandidate?
+    private var cachedDockFrame: CGRect?
+    private var cachedStageManagerEnabled = false
+    private var cachedFrontmostBundleIdentifier: String?
+    private var cachedFrontmostPID: pid_t?
+    private var dockMinimizedApplicationPIDs = Set<pid_t>()
+    private var dockFrameQueryInProgress = false
 
     init(
         preferences: Preferences,
@@ -63,20 +83,35 @@ final class DockClickController {
         self.preferences = preferences
         self.minimizeHandler = minimizeHandler
         self.restoreHandler = restoreHandler
-        installEventTapIfPossible()
-        if eventTap == nil {
-            retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                self?.installEventTapIfPossible()
-            }
+        refreshCachedSystemState()
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+            self?.cachedFrontmostBundleIdentifier = application?.bundleIdentifier
+            self?.cachedFrontmostPID = application?.processIdentifier
         }
+        dockFrameTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.refreshDockFrame()
+        }
+        stageManagerTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshStageManagerState()
+        }
+        installEventTapIfPossible()
+        scheduleEventTapRetryIfNeeded()
     }
 
     deinit {
         retryTimer?.invalidate()
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        dockFrameTimer?.invalidate()
+        stageManagerTimer?.invalidate()
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
         }
-        if let eventTap { CFMachPortInvalidate(eventTap) }
+        invalidateEventTap()
     }
 
     static func clickIntent(
@@ -108,6 +143,42 @@ final class DockClickController {
         )
     }
 
+    static func observedClickIntent(
+        featureEnabled: Bool,
+        clickedBundleIdentifier: String?,
+        frontmostBundleIdentifier: String?,
+        wasMinimizedByDock: Bool,
+        hadVisibleWindowAtMouseDown: Bool,
+        hasVisibleWindowAfterDock: Bool,
+        hasMinimizedWindowAfterDock: Bool
+    ) -> DockClickIntent? {
+        guard featureEnabled, let clickedBundleIdentifier else { return nil }
+        if wasMinimizedByDock { return .restore }
+        if !hasVisibleWindowAfterDock, hasMinimizedWindowAfterDock { return .restore }
+        if hadVisibleWindowAtMouseDown,
+           let frontmostBundleIdentifier,
+           clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame {
+            return .minimize
+        }
+        return nil
+    }
+
+    static func handlingMode(
+        featureEnabled: Bool,
+        stageManagerEnabled: Bool,
+        location: CGPoint,
+        dockFrame: CGRect?
+    ) -> DockClickHandlingMode {
+        guard featureEnabled,
+              let dockFrame,
+              dockFrame.insetBy(dx: -16, dy: -16).contains(location) else { return .ignore }
+        return stageManagerEnabled ? .observeOnly : .intercept
+    }
+
+    static func eventTapOptions(stageManagerEnabled: Bool) -> CGEventTapOptions {
+        stageManagerEnabled ? .listenOnly : .defaultTap
+    }
+
     fileprivate func handleEvent(type: CGEventType, event: CGEvent) -> Bool {
         let featureEnabled = preferences.dockClickMinimizesActiveWindow
         guard featureEnabled else {
@@ -117,62 +188,49 @@ final class DockClickController {
 
         let location = event.location
         let timestamp = ProcessInfo.processInfo.systemUptime
+        let handlingMode = Self.handlingMode(
+            featureEnabled: featureEnabled,
+            stageManagerEnabled: cachedStageManagerEnabled,
+            location: location,
+            dockFrame: cachedDockFrame
+        )
+        guard handlingMode != .ignore else {
+            candidate = nil
+            return false
+        }
+
+        if handlingMode == .observeOnly {
+            let frontmostBundleIdentifier = cachedFrontmostBundleIdentifier
+            let frontmostPID = cachedFrontmostPID
+            // AX minimized state is reliable here; Stage Manager can keep minimized
+            // windows in WindowServer's on-screen list.
+            let hadVisibleWindow = type == .leftMouseDown
+                && frontmostPID.map { windowState(pid: $0).hasVisibleWindow } == true
+            DispatchQueue.main.async { [weak self] in
+                self?.handleObservedEvent(
+                    type: type,
+                    location: location,
+                    timestamp: timestamp,
+                    frontmostBundleIdentifier: frontmostBundleIdentifier,
+                    frontmostPID: frontmostPID,
+                    hadVisibleWindow: hadVisibleWindow
+                )
+            }
+            return false
+        }
+
         switch type {
         case .leftMouseDown:
-            let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
-            let frontmostApplication = NSWorkspace.shared.frontmostApplication
-            guard let clickedBundleIdentifier,
-                  let clickedApplication = runningApplication(
-                    bundleIdentifier: clickedBundleIdentifier,
-                    preferredPID: frontmostApplication?.processIdentifier
-                  ) else {
-                candidate = nil
-                return false
-            }
-            let state = windowState(pid: clickedApplication.processIdentifier)
-            guard let intent = Self.clickIntent(
-                featureEnabled: featureEnabled,
-                clickedBundleIdentifier: clickedBundleIdentifier,
-                frontmostBundleIdentifier: frontmostApplication?.bundleIdentifier,
-                hasVisibleWindow: state.hasVisibleWindow,
-                hasMinimizedWindow: state.hasMinimizedWindow,
-                allowRestoreInterception: !stageManagerIsEnabled()
-            ) else {
-                candidate = nil
-                return false
-            }
-            candidate = DockClickCandidate(
-                pid: clickedApplication.processIdentifier,
-                bundleIdentifier: clickedBundleIdentifier,
+            candidate = makeCandidate(
                 location: location,
                 timestamp: timestamp,
-                intent: intent
+                frontmostBundleIdentifier: cachedFrontmostBundleIdentifier,
+                frontmostPID: cachedFrontmostPID,
+                allowRestoreInterception: true
             )
-            logger.debug("Dock click intent: \(intent == .restore ? "restore" : "minimize", privacy: .public)")
-            return intent == .restore
+            return candidate?.intent == .restore
         case .leftMouseUp:
-            guard let candidate else { return false }
-            self.candidate = nil
-            let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
-            let matches = candidate.matches(
-                bundleIdentifier: clickedBundleIdentifier,
-                location: location,
-                timestamp: timestamp
-            )
-            guard matches else { return candidate.intent == .restore }
-            switch candidate.intent {
-            case .minimize:
-                DispatchQueue.main.async { [weak self] in
-                    _ = self?.minimizeHandler(candidate.pid)
-                }
-                return false
-            case .restore:
-                logger.debug("Restoring minimized window without Dock animation path")
-                DispatchQueue.main.async { [weak self] in
-                    _ = self?.restoreHandler(candidate.pid)
-                }
-                return true
-            }
+            return finishCandidate(location: location, timestamp: timestamp)
         default:
             return false
         }
@@ -192,10 +250,11 @@ final class DockClickController {
         let mask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
             | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
         let context = Unmanaged.passUnretained(self).toOpaque()
+        let options = Self.eventTapOptions(stageManagerEnabled: cachedStageManagerEnabled)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .defaultTap,
+            options: options,
             eventsOfInterest: mask,
             callback: dockClickEventTapCallback,
             userInfo: context
@@ -206,11 +265,200 @@ final class DockClickController {
 
         eventTap = tap
         runLoopSource = source
+        installedEventTapOptions = options
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         retryTimer?.invalidate()
         retryTimer = nil
-        logger.notice("Dock click event tap installed")
+        logger.notice("Dock click event tap installed; listenOnly=\(options == .listenOnly, privacy: .public)")
+    }
+
+    private func scheduleEventTapRetryIfNeeded() {
+        guard eventTap == nil, retryTimer == nil else { return }
+        retryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.installEventTapIfPossible()
+        }
+    }
+
+    private func invalidateEventTap() {
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        if let eventTap { CFMachPortInvalidate(eventTap) }
+        runLoopSource = nil
+        eventTap = nil
+        installedEventTapOptions = nil
+    }
+
+    private func refreshStageManagerState() {
+        let enabled = stageManagerIsEnabled()
+        guard enabled != cachedStageManagerEnabled else { return }
+        cachedStageManagerEnabled = enabled
+        candidate = nil
+
+        let requiredOptions = Self.eventTapOptions(stageManagerEnabled: enabled)
+        guard installedEventTapOptions != requiredOptions else { return }
+        invalidateEventTap()
+        installEventTapIfPossible()
+        scheduleEventTapRetryIfNeeded()
+    }
+
+    private func handleObservedEvent(
+        type: CGEventType,
+        location: CGPoint,
+        timestamp: TimeInterval,
+        frontmostBundleIdentifier: String?,
+        frontmostPID: pid_t?,
+        hadVisibleWindow: Bool
+    ) {
+        switch type {
+        case .leftMouseDown:
+            candidate = makeCandidate(
+                location: location,
+                timestamp: timestamp,
+                frontmostBundleIdentifier: frontmostBundleIdentifier,
+                frontmostPID: frontmostPID,
+                allowRestoreInterception: false,
+                hasVisibleWindowAtEvent: hadVisibleWindow
+            )
+        case .leftMouseUp:
+            _ = finishCandidate(location: location, timestamp: timestamp)
+        default:
+            break
+        }
+    }
+
+    private func makeCandidate(
+        location: CGPoint,
+        timestamp: TimeInterval,
+        frontmostBundleIdentifier: String?,
+        frontmostPID: pid_t?,
+        allowRestoreInterception: Bool,
+        hasVisibleWindowAtEvent: Bool? = nil
+    ) -> DockClickCandidate? {
+        guard let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location),
+              let clickedApplication = runningApplication(
+                bundleIdentifier: clickedBundleIdentifier,
+                preferredPID: frontmostPID
+              ) else { return nil }
+        let intent: DockClickIntent?
+        if let hasVisibleWindowAtEvent {
+            let state = windowState(pid: clickedApplication.processIdentifier)
+            intent = Self.observedClickIntent(
+                featureEnabled: preferences.dockClickMinimizesActiveWindow,
+                clickedBundleIdentifier: clickedBundleIdentifier,
+                frontmostBundleIdentifier: frontmostBundleIdentifier,
+                wasMinimizedByDock: dockMinimizedApplicationPIDs.contains(
+                    clickedApplication.processIdentifier
+                ),
+                hadVisibleWindowAtMouseDown: hasVisibleWindowAtEvent,
+                hasVisibleWindowAfterDock: state.hasVisibleWindow,
+                hasMinimizedWindowAfterDock: state.hasMinimizedWindow
+            )
+            logger.debug(
+                "Observed Dock state: beforeVisible=\(hasVisibleWindowAtEvent, privacy: .public), afterVisible=\(state.hasVisibleWindow, privacy: .public), afterMinimized=\(state.hasMinimizedWindow, privacy: .public)"
+            )
+        } else {
+            let state = windowState(pid: clickedApplication.processIdentifier)
+            intent = Self.clickIntent(
+                featureEnabled: preferences.dockClickMinimizesActiveWindow,
+                clickedBundleIdentifier: clickedBundleIdentifier,
+                frontmostBundleIdentifier: frontmostBundleIdentifier,
+                hasVisibleWindow: state.hasVisibleWindow,
+                hasMinimizedWindow: state.hasMinimizedWindow,
+                allowRestoreInterception: allowRestoreInterception
+            )
+        }
+        guard let intent else { return nil }
+
+        logger.debug("Dock click intent: \(intent == .restore ? "restore" : "minimize", privacy: .public)")
+        return DockClickCandidate(
+            pid: clickedApplication.processIdentifier,
+            bundleIdentifier: clickedBundleIdentifier,
+            location: location,
+            timestamp: timestamp,
+            intent: intent
+        )
+    }
+
+    private func finishCandidate(location: CGPoint, timestamp: TimeInterval) -> Bool {
+        guard let candidate else { return false }
+        self.candidate = nil
+        let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
+        guard candidate.matches(
+            bundleIdentifier: clickedBundleIdentifier,
+            location: location,
+            timestamp: timestamp
+        ) else { return candidate.intent == .restore }
+
+        switch candidate.intent {
+        case .minimize:
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let minimized = self.minimizeHandler(candidate.pid)
+                if minimized { self.dockMinimizedApplicationPIDs.insert(candidate.pid) }
+                self.logger.debug("Dock minimize result: \(minimized, privacy: .public)")
+            }
+            return false
+        case .restore:
+            logger.debug("Restoring minimized window without Dock animation path")
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let restored = self.restoreHandler(candidate.pid)
+                if restored { self.dockMinimizedApplicationPIDs.remove(candidate.pid) }
+                self.logger.debug("Dock restore result: \(restored, privacy: .public)")
+            }
+            return true
+        }
+    }
+
+    private func refreshCachedSystemState() {
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        cachedFrontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+        cachedFrontmostPID = frontmostApplication?.processIdentifier
+        cachedStageManagerEnabled = stageManagerIsEnabled()
+        refreshDockFrame()
+    }
+
+    private func refreshDockFrame() {
+        guard preferences.dockClickMinimizesActiveWindow,
+              AXIsProcessTrusted() else {
+            cachedDockFrame = nil
+            return
+        }
+        guard !dockFrameQueryInProgress else { return }
+        dockFrameQueryInProgress = true
+        dockFrameQueryQueue.async { [weak self] in
+            let frame = self?.queryDockFrame()
+            DispatchQueue.main.async { [weak self] in
+                self?.cachedDockFrame = frame
+                self?.dockFrameQueryInProgress = false
+            }
+        }
+    }
+
+    private func queryDockFrame() -> CGRect? {
+        guard let dockApplication = NSRunningApplication.runningApplications(
+            withBundleIdentifier: Self.dockBundleIdentifier
+        ).first else { return nil }
+        let dockElement = AXUIElementCreateApplication(dockApplication.processIdentifier)
+        let children: [AXUIElement] = copyAttribute(kAXChildrenAttribute as CFString, from: dockElement) ?? []
+        guard let dockList = children.first(where: {
+            let role: String? = copyAttribute(kAXRoleAttribute as CFString, from: $0)
+            return role == (kAXListRole as String)
+        }), let positionValue: AXValue = copyAttribute(kAXPositionAttribute as CFString, from: dockList),
+              let sizeValue: AXValue = copyAttribute(kAXSizeAttribute as CFString, from: dockList) else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue, .cgPoint, &position),
+              AXValueGetValue(sizeValue, .cgSize, &size),
+              size.width > 0, size.height > 0 else {
+            return nil
+        }
+        return CGRect(origin: position, size: size)
     }
 
     private func dockApplicationBundleIdentifier(at location: CGPoint) -> String? {

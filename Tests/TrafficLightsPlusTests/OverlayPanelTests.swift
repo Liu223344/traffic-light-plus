@@ -30,6 +30,19 @@ import Testing
 }
 
 @MainActor
+@Test func hidingAnAlreadyHiddenOverlayDoesNotTouchItsPanelsAgain() {
+    let pid = ProcessInfo.processInfo.processIdentifier
+    let key = AXWindowKey(pid: pid, element: AXUIElementCreateApplication(pid))
+    let overlay = WindowOverlay(key: key)
+
+    #expect(!overlay.hide())
+    overlay.suppressUntilRestored()
+    #expect(!overlay.hide())
+    overlay.restoreFromSuppression()
+    #expect(!overlay.hide())
+}
+
+@MainActor
 @Test func periodicWindowStateRecoversFromMissedDeminiaturizeNotification() {
     let pid = ProcessInfo.processInfo.processIdentifier
     let key = AXWindowKey(pid: pid, element: AXUIElementCreateApplication(pid))
