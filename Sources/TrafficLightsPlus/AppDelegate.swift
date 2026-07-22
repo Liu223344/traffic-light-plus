@@ -29,9 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences: preferences,
             minimizeHandler: { [weak self] pid in
                 self?.minimizeWindowFromDock(pid: pid) ?? false
-            },
-            restoreHandler: { [weak self] pid in
-                self?.restoreWindowFromDock(pid: pid) ?? false
             }
         )
         configureStatusItem()
@@ -40,6 +37,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] language in self?.applyLanguage(language) }
             .store(in: &subscriptions)
+        preferences.$menuBarIconVisible
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isVisible in self?.statusItem?.isVisible = isVisible }
+            .store(in: &subscriptions)
+        if Self.shouldOpenSettingsAtLaunch(menuBarIconVisible: preferences.menuBarIconVisible) {
+            DispatchQueue.main.async { [weak self] in self?.showSettings() }
+        }
+    }
+
+    static func shouldOpenSettingsAtLaunch(menuBarIconVisible: Bool) -> Bool {
+        !menuBarIconVisible
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -50,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: "Traffic Lights+")
+        item.isVisible = preferences.menuBarIconVisible
 
         let menu = NSMenu()
         menu.delegate = self
@@ -180,19 +191,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tracker?.minimizeFocusedWindow(of: pid) ?? false
     }
 
-    private func restoreWindowFromDock(pid: pid_t) -> Bool {
-        if pid == ProcessInfo.processInfo.processIdentifier {
-            guard let settingsWindow else { return false }
-            if settingsWindow.isMiniaturized {
-                settingsWindow.deminiaturize(nil)
-            } else {
-                settingsWindow.makeKeyAndOrderFront(nil)
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            return true
-        }
-        return tracker?.restoreMinimizedWindow(of: pid) ?? false
-    }
 }
 
 extension AppDelegate: NSMenuDelegate {

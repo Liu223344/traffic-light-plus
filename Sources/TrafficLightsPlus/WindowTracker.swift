@@ -279,49 +279,6 @@ final class WindowTracker {
         overlaysEnabled || (quitOnCloseEnabled && hasQuitOnCloseApplications)
     }
 
-    @discardableResult
-    func restoreMinimizedWindow(of pid: pid_t) -> Bool {
-        let applicationElement = AXUIElementCreateApplication(pid)
-        let focusedWindow: AXUIElement? = copyAttribute(
-            kAXFocusedWindowAttribute as CFString,
-            from: applicationElement
-        )
-        let mainWindow: AXUIElement? = copyAttribute(
-            kAXMainWindowAttribute as CFString,
-            from: applicationElement
-        )
-        let windows: [AXUIElement] = copyAttribute(kAXWindowsAttribute as CFString, from: applicationElement) ?? []
-        let preferredWindows = [focusedWindow, mainWindow].compactMap { $0 } + windows
-        guard let application = NSRunningApplication(processIdentifier: pid) else { return false }
-
-        if let window = preferredWindows.first(where: {
-            copyAttribute(kAXMinimizedAttribute as CFString, from: $0) ?? false
-        }) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = AXUIElementSetAttributeValue(
-                    window,
-                    kAXMinimizedAttribute as CFString,
-                    kCFBooleanFalse
-                )
-                guard result == .success else { return }
-                DispatchQueue.main.async {
-                    application.activate(options: [.activateIgnoringOtherApps])
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-                    }
-                }
-            }
-            return true
-        }
-
-        guard let window = preferredWindows.first else { return false }
-        application.activate(options: [.activateIgnoringOtherApps])
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        }
-        return true
-    }
-
     private func canMinimize(_ window: AXUIElement) -> Bool {
         if let button: AXUIElement = copyAttribute(kAXMinimizeButtonAttribute as CFString, from: window),
            copyAttribute(kAXEnabledAttribute as CFString, from: button) ?? true {

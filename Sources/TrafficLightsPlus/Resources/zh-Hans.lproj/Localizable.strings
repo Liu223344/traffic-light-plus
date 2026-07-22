@@ -1,6 +1,8 @@
 "settings.window.title" = "Traffic Lights+ 设置";
 "settings.subtitle" = "更大、更顺手的窗口控制按钮";
 "language.label" = "语言 / Language";
+"menu_bar_icon.visible" = "显示菜单栏图标";
+"menu_bar_icon.visible.help" = "隐藏后，重新打开 Traffic Lights+ 可再次进入设置";
 "overlay.enabled" = "放大红绿灯";
 "preview.title" = "实时预览";
 "appearance.title" = "外观";

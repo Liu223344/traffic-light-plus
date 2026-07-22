@@ -13,20 +13,20 @@ private func dockClickEventTapCallback(
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         controller.reenableEventTap()
     } else {
-        if controller.handleEvent(type: type, event: event) { return nil }
+        controller.handleEvent(type: type, event: event)
     }
     return Unmanaged.passUnretained(event)
 }
 
 enum DockClickIntent {
     case minimize
-    case restore
+    case restoreNatively
+    case restoredBySystem
 }
 
 enum DockClickHandlingMode: Equatable {
     case ignore
     case observeOnly
-    case intercept
 }
 
 struct DockClickCandidate {
@@ -53,7 +53,6 @@ final class DockClickController {
 
     private let preferences: Preferences
     private let minimizeHandler: (pid_t) -> Bool
-    private let restoreHandler: (pid_t) -> Bool
     private let logger = Logger(subsystem: "app.trafficlightsplus.mac", category: "dock-click")
     private let systemWideElement = AXUIElementCreateSystemWide()
     private let dockFrameQueryQueue = DispatchQueue(
@@ -77,12 +76,10 @@ final class DockClickController {
 
     init(
         preferences: Preferences,
-        minimizeHandler: @escaping (pid_t) -> Bool,
-        restoreHandler: @escaping (pid_t) -> Bool
+        minimizeHandler: @escaping (pid_t) -> Bool
     ) {
         self.preferences = preferences
         self.minimizeHandler = minimizeHandler
-        self.restoreHandler = restoreHandler
         refreshCachedSystemState()
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -120,7 +117,7 @@ final class DockClickController {
         frontmostBundleIdentifier: String?,
         hasVisibleWindow: Bool,
         hasMinimizedWindow: Bool,
-        allowRestoreInterception: Bool
+        detectPendingSystemRestore: Bool
     ) -> DockClickIntent? {
         guard featureEnabled, let clickedBundleIdentifier else { return nil }
         if hasVisibleWindow,
@@ -128,7 +125,9 @@ final class DockClickController {
            clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame {
             return .minimize
         }
-        if allowRestoreInterception, !hasVisibleWindow, hasMinimizedWindow { return .restore }
+        if detectPendingSystemRestore, !hasVisibleWindow, hasMinimizedWindow {
+            return .restoreNatively
+        }
         return nil
     }
 
@@ -153,8 +152,10 @@ final class DockClickController {
         hasMinimizedWindowAfterDock: Bool
     ) -> DockClickIntent? {
         guard featureEnabled, let clickedBundleIdentifier else { return nil }
-        if wasMinimizedByDock { return .restore }
-        if !hasVisibleWindowAfterDock, hasMinimizedWindowAfterDock { return .restore }
+        if wasMinimizedByDock {
+            return hasVisibleWindowAfterDock ? .restoredBySystem : .restoreNatively
+        }
+        if !hasVisibleWindowAfterDock, hasMinimizedWindowAfterDock { return .restoreNatively }
         if hadVisibleWindowAtMouseDown,
            let frontmostBundleIdentifier,
            clickedBundleIdentifier.caseInsensitiveCompare(frontmostBundleIdentifier) == .orderedSame {
@@ -172,18 +173,18 @@ final class DockClickController {
         guard featureEnabled,
               let dockFrame,
               dockFrame.insetBy(dx: -16, dy: -16).contains(location) else { return .ignore }
-        return stageManagerEnabled ? .observeOnly : .intercept
+        return .observeOnly
     }
 
     static func eventTapOptions(stageManagerEnabled: Bool) -> CGEventTapOptions {
-        stageManagerEnabled ? .listenOnly : .defaultTap
+        .listenOnly
     }
 
-    fileprivate func handleEvent(type: CGEventType, event: CGEvent) -> Bool {
+    fileprivate func handleEvent(type: CGEventType, event: CGEvent) {
         let featureEnabled = preferences.dockClickMinimizesActiveWindow
         guard featureEnabled else {
             candidate = nil
-            return false
+            return
         }
 
         let location = event.location
@@ -196,43 +197,24 @@ final class DockClickController {
         )
         guard handlingMode != .ignore else {
             candidate = nil
-            return false
+            return
         }
 
-        if handlingMode == .observeOnly {
-            let frontmostBundleIdentifier = cachedFrontmostBundleIdentifier
-            let frontmostPID = cachedFrontmostPID
-            // AX minimized state is reliable here; Stage Manager can keep minimized
-            // windows in WindowServer's on-screen list.
-            let hadVisibleWindow = type == .leftMouseDown
-                && frontmostPID.map { windowState(pid: $0).hasVisibleWindow } == true
-            DispatchQueue.main.async { [weak self] in
-                self?.handleObservedEvent(
-                    type: type,
-                    location: location,
-                    timestamp: timestamp,
-                    frontmostBundleIdentifier: frontmostBundleIdentifier,
-                    frontmostPID: frontmostPID,
-                    hadVisibleWindow: hadVisibleWindow
-                )
-            }
-            return false
-        }
-
-        switch type {
-        case .leftMouseDown:
-            candidate = makeCandidate(
+        let frontmostBundleIdentifier = cachedFrontmostBundleIdentifier
+        let frontmostPID = cachedFrontmostPID
+        // AX minimized state is reliable here; Stage Manager can keep minimized
+        // windows in WindowServer's on-screen list.
+        let hadVisibleWindow = type == .leftMouseDown
+            && frontmostPID.map { windowState(pid: $0).hasVisibleWindow } == true
+        DispatchQueue.main.async { [weak self] in
+            self?.handleObservedEvent(
+                type: type,
                 location: location,
                 timestamp: timestamp,
-                frontmostBundleIdentifier: cachedFrontmostBundleIdentifier,
-                frontmostPID: cachedFrontmostPID,
-                allowRestoreInterception: true
+                frontmostBundleIdentifier: frontmostBundleIdentifier,
+                frontmostPID: frontmostPID,
+                hadVisibleWindow: hadVisibleWindow
             )
-            return candidate?.intent == .restore
-        case .leftMouseUp:
-            return finishCandidate(location: location, timestamp: timestamp)
-        default:
-            return false
         }
     }
 
@@ -318,11 +300,11 @@ final class DockClickController {
                 timestamp: timestamp,
                 frontmostBundleIdentifier: frontmostBundleIdentifier,
                 frontmostPID: frontmostPID,
-                allowRestoreInterception: false,
+                detectPendingSystemRestore: false,
                 hasVisibleWindowAtEvent: hadVisibleWindow
             )
         case .leftMouseUp:
-            _ = finishCandidate(location: location, timestamp: timestamp)
+            finishCandidate(location: location, timestamp: timestamp)
         default:
             break
         }
@@ -333,7 +315,7 @@ final class DockClickController {
         timestamp: TimeInterval,
         frontmostBundleIdentifier: String?,
         frontmostPID: pid_t?,
-        allowRestoreInterception: Bool,
+        detectPendingSystemRestore: Bool,
         hasVisibleWindowAtEvent: Bool? = nil
     ) -> DockClickCandidate? {
         guard let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location),
@@ -366,12 +348,17 @@ final class DockClickController {
                 frontmostBundleIdentifier: frontmostBundleIdentifier,
                 hasVisibleWindow: state.hasVisibleWindow,
                 hasMinimizedWindow: state.hasMinimizedWindow,
-                allowRestoreInterception: allowRestoreInterception
+                detectPendingSystemRestore: detectPendingSystemRestore
             )
         }
         guard let intent else { return nil }
 
-        logger.debug("Dock click intent: \(intent == .restore ? "restore" : "minimize", privacy: .public)")
+        let intentDescription = switch intent {
+        case .minimize: "minimize"
+        case .restoreNatively: "restore-natively"
+        case .restoredBySystem: "restored-by-system"
+        }
+        logger.debug("Dock click intent: \(intentDescription, privacy: .public)")
         return DockClickCandidate(
             pid: clickedApplication.processIdentifier,
             bundleIdentifier: clickedBundleIdentifier,
@@ -381,15 +368,15 @@ final class DockClickController {
         )
     }
 
-    private func finishCandidate(location: CGPoint, timestamp: TimeInterval) -> Bool {
-        guard let candidate else { return false }
+    private func finishCandidate(location: CGPoint, timestamp: TimeInterval) {
+        guard let candidate else { return }
         self.candidate = nil
         let clickedBundleIdentifier = dockApplicationBundleIdentifier(at: location)
         guard candidate.matches(
             bundleIdentifier: clickedBundleIdentifier,
             location: location,
             timestamp: timestamp
-        ) else { return candidate.intent == .restore }
+        ) else { return }
 
         switch candidate.intent {
         case .minimize:
@@ -399,16 +386,9 @@ final class DockClickController {
                 if minimized { self.dockMinimizedApplicationPIDs.insert(candidate.pid) }
                 self.logger.debug("Dock minimize result: \(minimized, privacy: .public)")
             }
-            return false
-        case .restore:
-            logger.debug("Restoring minimized window without Dock animation path")
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let restored = self.restoreHandler(candidate.pid)
-                if restored { self.dockMinimizedApplicationPIDs.remove(candidate.pid) }
-                self.logger.debug("Dock restore result: \(restored, privacy: .public)")
-            }
-            return true
+        case .restoreNatively, .restoredBySystem:
+            dockMinimizedApplicationPIDs.remove(candidate.pid)
+            logger.debug("Leaving minimized-window restoration to the Dock")
         }
     }
 

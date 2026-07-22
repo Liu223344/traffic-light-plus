@@ -1,6 +1,8 @@
 "settings.window.title" = "Traffic Lights+ Settings";
 "settings.subtitle" = "Larger, easier-to-use window controls";
 "language.label" = "语言 / Language";
+"menu_bar_icon.visible" = "Show Menu Bar Icon";
+"menu_bar_icon.visible.help" = "Reopen Traffic Lights+ to access Settings after hiding the icon";
 "overlay.enabled" = "Enlarged Traffic Lights";
 "preview.title" = "Live Preview";
 "appearance.title" = "Appearance";

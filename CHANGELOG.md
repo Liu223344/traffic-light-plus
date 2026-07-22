@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.4.1 - 2026-07-22
+
+- Added a persistent option to hide the Traffic Lights+ menu bar icon while keeping Settings recoverable by reopening the app.
+- Added multi-selection when choosing applications for the quit-on-close list.
+- Fixed enlarged zoom-button clicks in Safari Web Apps after opening the native zoom and tiling menu.
+- Left all minimized-window restoration to the Dock so every application keeps the native macOS transition without an Accessibility-driven flash.
+
 ## 1.4.0 - 2026-07-20
 
 - Added an independent quit-on-close switch that works with native window controls when enlarged traffic lights are disabled.

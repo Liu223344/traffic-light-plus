@@ -13,6 +13,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     withDefaults { defaults in
         let preferences = Preferences(defaults: defaults, preferredLanguages: ["zh-Hans-CN"])
         #expect(preferences.language == .simplifiedChinese)
+        #expect(preferences.menuBarIconVisible)
         #expect(preferences.enabled)
         #expect(preferences.size == 28)
         #expect(preferences.spacing == 0)
@@ -38,6 +39,8 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     #expect(AppLocalization.string(.dockClickMinimize, language: .english) == "Dock Click to Minimize")
     #expect(AppLocalization.string(.quitOnCloseEnabled, language: .simplifiedChinese) == "关闭时退出应用")
     #expect(AppLocalization.string(.quitOnCloseEnabled, language: .english) == "Quit Apps on Close")
+    #expect(AppLocalization.string(.menuBarIconVisible, language: .simplifiedChinese) == "显示菜单栏图标")
+    #expect(AppLocalization.string(.menuBarIconVisible, language: .english) == "Show Menu Bar Icon")
     #expect(HiddenTrafficLightRevealMode.group.title(language: .english) == "Group")
     #expect(HiddenTrafficLightRevealMode.nearest.title(language: .english) == "Single (Recommended)")
 }
@@ -134,6 +137,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     withDefaults { defaults in
         let preferences = Preferences(defaults: defaults)
         preferences.language = .english
+        preferences.menuBarIconVisible = false
         preferences.enabled = false
         preferences.size = 42
         preferences.spacing = 12
@@ -152,6 +156,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
 
         let restored = Preferences(defaults: defaults)
         #expect(restored.language == .english)
+        #expect(!restored.menuBarIconVisible)
         #expect(!restored.enabled)
         #expect(restored.size == 42)
         #expect(restored.spacing == 12)
@@ -168,6 +173,11 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
             QuitOnCloseApplication(bundleIdentifier: "com.example.editor", displayName: "Editor")
         ])
     }
+}
+
+@Test func hiddenMenuBarIconReopensSettingsOnTheNextLaunch() {
+    #expect(!AppDelegate.shouldOpenSettingsAtLaunch(menuBarIconVisible: true))
+    #expect(AppDelegate.shouldOpenSettingsAtLaunch(menuBarIconVisible: false))
 }
 
 @Test func quitOnCloseApplicationsCanBeAddedDeduplicatedAndRemoved() {

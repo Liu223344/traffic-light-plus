@@ -25,6 +25,8 @@ enum AppString: String, CaseIterable {
     case settingsWindowTitle = "settings.window.title"
     case settingsSubtitle = "settings.subtitle"
     case languageLabel = "language.label"
+    case menuBarIconVisible = "menu_bar_icon.visible"
+    case menuBarIconVisibleHelp = "menu_bar_icon.visible.help"
     case overlayEnabled = "overlay.enabled"
     case livePreview = "preview.title"
     case appearance = "appearance.title"

@@ -35,6 +35,7 @@ Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗
 - 可分别把红、黄、绿按钮设置为关闭窗口、退出应用、最小化、缩放、隐藏应用或无操作。
 - 支持所有可见普通窗口和多显示器；全屏窗口支持仍在开发中。
 - 设置界面支持简体中文和英文，可在应用内即时切换。
+- 可选择隐藏菜单栏里的 Traffic Lights+ 图标；隐藏后重新打开应用即可进入设置。
 - 默认定期检查并后台下载正式版更新，安装和重启前由用户确认。
 - 设置即时生效并通过 `UserDefaults` 保存在本机。
 - 除软件更新外无网络请求；无分析统计、遥测、广告和账号系统。
@@ -65,6 +66,7 @@ Traffic Lights+ 启动后常驻菜单栏。设置页可以调整：
 - “在全屏窗口中显示（开发中）”当前不可勾选。
 - 独立的 Dock 开关：再次点击应用图标时最小化当前窗口，无需开启放大红绿灯。
 - “语言 / Language”可在简体中文和英文之间即时切换。
+- “显示菜单栏图标”可单独关闭；隐藏图标后可重新打开应用进入设置。
 - “软件更新”可分别控制自动检查、自动下载，也可立即手动检查。
 
 隐藏模式开启时，将鼠标移到窗口左上角红绿灯区域即可显示放大按钮。单个模式会选择距离鼠标最近的可见按钮，按钮被其他窗口遮挡时不会显示或参与选择。
@@ -158,6 +160,7 @@ Public builds currently use ad-hoc code signing and are not notarized by Apple. 
 - Configure the red, yellow, and green controls independently to close a window, quit an app, minimize, zoom, hide an app, or do nothing.
 - Supports all visible standard windows and multiple displays. Full-screen window support is still in development.
 - The settings interface supports Simplified Chinese and English with immediate in-app switching.
+- The Traffic Lights+ menu bar icon can be hidden; reopen the app to access Settings afterward.
 - Stable releases are checked periodically and downloaded in the background by default; installation and relaunch require user confirmation.
 - Settings take effect immediately and are stored locally with `UserDefaults`.
 - No network access except software updates, and no analytics, telemetry, advertisements, or account system.
@@ -188,6 +191,7 @@ Traffic Lights+ remains available in the menu bar after launch. Its settings inc
 - a disabled **Show in full-screen windows (In development)** option.
 - an independent Dock switch that minimizes the active window when its application icon is clicked again, without requiring enlarged traffic lights.
 - a **语言 / Language** selector for switching immediately between Simplified Chinese and English.
+- a **Show Menu Bar Icon** toggle; reopen the app to access Settings after hiding it.
 - a **Software Updates** section for automatic checks, automatic downloads, and immediate manual checks.
 
 When hidden mode is enabled, move the pointer into the traffic-light area in the top-left corner of a window to reveal the enlarged controls. Single mode selects the nearest visible control. Controls covered by another window are neither displayed nor included in selection.

@@ -14,6 +14,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 languageSelector
+                menuBarIconToggle
                 overlayToggle
                 Divider()
                 preview
@@ -75,6 +76,19 @@ struct SettingsView: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .accessibilityLabel(localized(.overlayEnabled))
+        }
+    }
+
+    private var menuBarIconToggle: some View {
+        HStack {
+            Text(localized(.menuBarIconVisible))
+                .font(.headline)
+            Spacer()
+            Toggle("", isOn: $preferences.menuBarIconVisible)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .help(localized(.menuBarIconVisibleHelp))
+                .accessibilityLabel(localized(.menuBarIconVisible))
         }
     }
 
@@ -424,23 +438,31 @@ struct SettingsView: View {
         panel.allowedContentTypes = [.applicationBundle]
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let bundle = Bundle(url: url),
-              let bundleIdentifier = bundle.bundleIdentifier,
-              !bundleIdentifier.isEmpty else {
-            isShowingAppSelectionError = true
-            return
+        guard panel.runModal() == .OK else { return }
+
+        var encounteredInvalidApplication = false
+        for url in panel.urls {
+            guard let bundle = Bundle(url: url),
+                  let bundleIdentifier = bundle.bundleIdentifier,
+                  !bundleIdentifier.isEmpty else {
+                encounteredInvalidApplication = true
+                continue
+            }
+
+            let displayName = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+                ?? url.deletingPathExtension().lastPathComponent
+            _ = preferences.addQuitOnCloseApplication(
+                bundleIdentifier: bundleIdentifier,
+                displayName: displayName
+            )
         }
 
-        let displayName = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
-            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
-            ?? url.deletingPathExtension().lastPathComponent
-        _ = preferences.addQuitOnCloseApplication(
-            bundleIdentifier: bundleIdentifier,
-            displayName: displayName
-        )
+        if encounteredInvalidApplication {
+            isShowingAppSelectionError = true
+        }
     }
 
     private func icon(for application: QuitOnCloseApplication) -> NSImage {

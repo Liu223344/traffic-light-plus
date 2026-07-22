@@ -9,7 +9,7 @@ import Testing
         frontmostBundleIdentifier: "COM.EXAMPLE.EDITOR",
         hasVisibleWindow: true,
         hasMinimizedWindow: false,
-        allowRestoreInterception: true
+        detectPendingSystemRestore: true
     ) == .minimize)
     #expect(DockClickController.clickIntent(
         featureEnabled: true,
@@ -17,15 +17,15 @@ import Testing
         frontmostBundleIdentifier: "com.example.Editor",
         hasVisibleWindow: false,
         hasMinimizedWindow: true,
-        allowRestoreInterception: true
-    ) == .restore)
+        detectPendingSystemRestore: true
+    ) == .restoreNatively)
     #expect(DockClickController.clickIntent(
         featureEnabled: false,
         clickedBundleIdentifier: "com.example.Editor",
         frontmostBundleIdentifier: "com.example.Editor",
         hasVisibleWindow: false,
         hasMinimizedWindow: true,
-        allowRestoreInterception: true
+        detectPendingSystemRestore: true
     ) == nil)
     #expect(DockClickController.clickIntent(
         featureEnabled: true,
@@ -33,7 +33,7 @@ import Testing
         frontmostBundleIdentifier: "com.example.Browser",
         hasVisibleWindow: true,
         hasMinimizedWindow: false,
-        allowRestoreInterception: true
+        detectPendingSystemRestore: true
     ) == nil)
     #expect(DockClickController.clickIntent(
         featureEnabled: true,
@@ -41,7 +41,7 @@ import Testing
         frontmostBundleIdentifier: "com.example.Editor",
         hasVisibleWindow: false,
         hasMinimizedWindow: true,
-        allowRestoreInterception: false
+        detectPendingSystemRestore: false
     ) == nil)
 }
 
@@ -54,7 +54,7 @@ import Testing
         hadVisibleWindowAtMouseDown: false,
         hasVisibleWindowAfterDock: false,
         hasMinimizedWindowAfterDock: true
-    ) == .restore)
+    ) == .restoreNatively)
     #expect(DockClickController.observedClickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
@@ -81,7 +81,7 @@ import Testing
         hadVisibleWindowAtMouseDown: false,
         hasVisibleWindowAfterDock: false,
         hasMinimizedWindowAfterDock: true
-    ) == .restore)
+    ) == .restoreNatively)
     #expect(DockClickController.observedClickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
@@ -90,7 +90,7 @@ import Testing
         hadVisibleWindowAtMouseDown: true,
         hasVisibleWindowAfterDock: false,
         hasMinimizedWindowAfterDock: true
-    ) == .restore)
+    ) == .restoreNatively)
     #expect(DockClickController.observedClickIntent(
         featureEnabled: true,
         clickedBundleIdentifier: "com.example.Editor",
@@ -99,7 +99,16 @@ import Testing
         hadVisibleWindowAtMouseDown: true,
         hasVisibleWindowAfterDock: true,
         hasMinimizedWindowAfterDock: false
-    ) == .restore)
+    ) == .restoredBySystem)
+    #expect(DockClickController.observedClickIntent(
+        featureEnabled: true,
+        clickedBundleIdentifier: "com.example.Editor",
+        frontmostBundleIdentifier: "com.example.Editor",
+        wasMinimizedByDock: true,
+        hadVisibleWindowAtMouseDown: false,
+        hasVisibleWindowAfterDock: false,
+        hasMinimizedWindowAfterDock: true
+    ) == .restoreNatively)
 }
 
 @Test func dockClickCandidateRejectsDragsAndDifferentDockItems() {
@@ -182,7 +191,7 @@ import Testing
         stageManagerEnabled: false,
         location: CGPoint(x: 400, y: 840),
         dockFrame: dockFrame
-    ) == .intercept)
+    ) == .observeOnly)
     #expect(DockClickController.handlingMode(
         featureEnabled: false,
         stageManagerEnabled: false,
@@ -199,7 +208,7 @@ import Testing
 
 @Test func stageManagerUsesANonBlockingEventTap() {
     #expect(DockClickController.eventTapOptions(stageManagerEnabled: true) == .listenOnly)
-    #expect(DockClickController.eventTapOptions(stageManagerEnabled: false) == .defaultTap)
+    #expect(DockClickController.eventTapOptions(stageManagerEnabled: false) == .listenOnly)
 }
 
 @Test func dockMinimizeNeverUsesStaleOverlaysWhenTrafficLightsAreDisabled() {

@@ -57,7 +57,11 @@ final class WindowOverlay {
     private var hoveredZoomMenuAction: WindowAction?
     private var zoomMenuTriggeredAt: TimeInterval?
     private lazy var zoomAccessibilityQueue = DispatchQueue(
-        label: "app.trafficlightsplus.mac.zoom-accessibility.\(key.pid)",
+        label: "app.trafficlightsplus.mac.zoom-action.\(key.pid)",
+        qos: .userInitiated
+    )
+    private lazy var zoomMenuAccessibilityQueue = DispatchQueue(
+        label: "app.trafficlightsplus.mac.zoom-menu.\(key.pid)",
         qos: .userInitiated
     )
     private var minimizeRequestGeneration = 0
@@ -574,7 +578,7 @@ final class WindowOverlay {
         cancelZoomMenuRequest(clearTriggeredState: true)
         guard interactiveActions.contains(action),
               let panel = panels[action],
-              let zoomButton = targetButtons[.zoom] else { return }
+              let zoomButton = currentButton(for: .zoom) else { return }
 
         let supportsShowMenu = supportsAccessibilityAction(kAXShowMenuAction as CFString, on: zoomButton)
         guard Self.shouldOfferZoomMenu(
@@ -590,7 +594,7 @@ final class WindowOverlay {
                   self.hoveredZoomMenuAction == action,
                   self.interactiveActions.contains(action),
                   let panel = self.panels[action],
-                  let zoomButton = self.targetButtons[.zoom] else { return }
+                  let zoomButton = self.currentButton(for: .zoom) else { return }
 
             let supportsShowMenu = self.supportsAccessibilityAction(
                 kAXShowMenuAction as CFString,
@@ -608,8 +612,11 @@ final class WindowOverlay {
 
             self.zoomMenuWorkItem = nil
             self.zoomMenuTriggeredAt = ProcessInfo.processInfo.systemUptime
-            let actionQueue = self.zoomAccessibilityQueue
-            actionQueue.async {
+            // Some Web App windows block AXShowMenu until the menu is dismissed.
+            // Keep it off the click queue so a subsequent AXPress can dismiss the
+            // menu and still reach the native zoom button immediately.
+            let menuQueue = self.zoomMenuAccessibilityQueue
+            menuQueue.async {
                 _ = AXUIElementPerformAction(zoomButton, kAXShowMenuAction as CFString)
             }
         }
@@ -654,7 +661,7 @@ final class WindowOverlay {
         cancelZoomMenuRequest(clearTriggeredState: true)
 
         if let nativeAction = behavior.nativeWindowAction {
-            guard let button = targetButtons[nativeAction] else { NSSound.beep(); return }
+            guard let button = currentButton(for: nativeAction) else { NSSound.beep(); return }
             if behavior == .minimizeWindow {
                 performMinimize(using: button)
                 return
@@ -789,6 +796,14 @@ final class WindowOverlay {
         case .minimize: return kAXMinimizeButtonAttribute as CFString
         case .zoom: return kAXZoomButtonAttribute as CFString
         }
+    }
+
+    private func currentButton(for action: WindowAction) -> AXUIElement? {
+        if let button: AXUIElement = copyAttribute(attribute(for: action), from: window) {
+            targetButtons[action] = button
+            return button
+        }
+        return targetButtons[action]
     }
 
     private func axFrame(of element: AXUIElement) -> CGRect? {

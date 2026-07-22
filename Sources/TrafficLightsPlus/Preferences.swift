@@ -34,6 +34,7 @@ struct QuitOnCloseApplication: Codable, Hashable, Identifiable {
 final class Preferences: ObservableObject {
     private enum Key {
         static let language = "appLanguage"
+        static let menuBarIconVisible = "menuBarIconVisible"
         static let enabled = "enabled"
         static let size = "controlSize"
         static let spacing = "controlSpacingAdjustment"
@@ -53,6 +54,10 @@ final class Preferences: ObservableObject {
 
     @Published var language: AppLanguage {
         didSet { defaults.set(language.rawValue, forKey: Key.language) }
+    }
+
+    @Published var menuBarIconVisible: Bool {
+        didSet { defaults.set(menuBarIconVisible, forKey: Key.menuBarIconVisible) }
     }
 
     @Published var enabled: Bool {
@@ -117,6 +122,7 @@ final class Preferences: ObservableObject {
         let storedLanguageValue = defaults.object(forKey: Key.language) as? String
         let initialLanguage = storedLanguageValue.flatMap(AppLanguage.init(rawValue:)) ?? systemLanguage
         defaults.register(defaults: [
+            Key.menuBarIconVisible: true,
             Key.enabled: true,
             Key.size: ControlLayout.defaultSize,
             Key.spacing: ControlLayout.defaultSpacingAdjustment,
@@ -134,6 +140,7 @@ final class Preferences: ObservableObject {
         if storedLanguageValue != nil, AppLanguage(rawValue: storedLanguageValue ?? "") == nil {
             defaults.set(initialLanguage.rawValue, forKey: Key.language)
         }
+        menuBarIconVisible = defaults.bool(forKey: Key.menuBarIconVisible)
         enabled = defaults.bool(forKey: Key.enabled)
         size = Double(ControlLayout.effectiveSize(preferred: defaults.double(forKey: Key.size)))
         spacing = Double(ControlLayout.effectiveSpacingAdjustment(preferred: defaults.double(forKey: Key.spacing)))
