@@ -125,6 +125,96 @@ import Testing
     #expect(WindowOverlay.zoomActionDelay(menuTriggeredAt: 11, now: 10) == 0)
 }
 
+@Test func closingBehaviorsDismissTheOverlayBeforePerformingTheirAction() {
+    #expect(WindowOverlay.closeDismissalDuration == 1.0)
+    #expect(WindowOverlay.shouldDismissImmediately(behavior: .closeWindow))
+    #expect(WindowOverlay.shouldDismissImmediately(behavior: .quitApplication))
+    #expect(!WindowOverlay.shouldDismissImmediately(behavior: .minimizeWindow))
+    #expect(!WindowOverlay.shouldDismissImmediately(behavior: .zoomWindow))
+    #expect(!WindowOverlay.shouldDismissImmediately(behavior: .hideApplication))
+    #expect(!WindowOverlay.shouldDismissImmediately(behavior: .doNothing))
+}
+
+@Test func adjacentToolbarControlCannotTriggerAnEnlargedTrafficLight() {
+    let nativeFrames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 20, y: 20, width: 14, height: 14),
+        .minimize: CGRect(x: 40, y: 20, width: 14, height: 14),
+        .zoom: CGRect(x: 60, y: 20, width: 14, height: 14)
+    ]
+    let expandedFrames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 3, y: 3, width: 48, height: 48),
+        .minimize: CGRect(x: 55, y: 3, width: 48, height: 48),
+        .zoom: CGRect(x: 107, y: 3, width: 48, height: 48)
+    ]
+    var isEngaged = false
+    var selectedAction: WindowAction?
+
+    let actions = WindowOverlay.desiredRevealActions(
+        pointer: CGPoint(x: 130, y: 27),
+        mode: .nearest,
+        nativeFrames: nativeFrames,
+        expandedFrames: expandedFrames,
+        actions: Set(WindowAction.allCases),
+        isEngaged: &isEngaged,
+        selectedAction: &selectedAction
+    )
+
+    #expect(actions.isEmpty)
+    #expect(!isEngaged)
+    #expect(selectedAction == nil)
+}
+
+@Test func legitimatelyTriggeredTrafficLightStaysInteractiveWhilePointerFollowsExpansion() {
+    let nativeFrames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 20, y: 20, width: 14, height: 14),
+        .minimize: CGRect(x: 40, y: 20, width: 14, height: 14),
+        .zoom: CGRect(x: 60, y: 20, width: 14, height: 14)
+    ]
+    let expandedFrames: [WindowAction: CGRect] = [
+        .close: CGRect(x: 3, y: 3, width: 48, height: 48),
+        .minimize: CGRect(x: 55, y: 3, width: 48, height: 48),
+        .zoom: CGRect(x: 107, y: 3, width: 48, height: 48)
+    ]
+    var isEngaged = false
+    var selectedAction: WindowAction?
+
+    let triggered = WindowOverlay.desiredRevealActions(
+        pointer: CGPoint(x: 67, y: 27),
+        mode: .nearest,
+        nativeFrames: nativeFrames,
+        expandedFrames: expandedFrames,
+        actions: Set(WindowAction.allCases),
+        isEngaged: &isEngaged,
+        selectedAction: &selectedAction
+    )
+    #expect(triggered == [.zoom])
+    #expect(isEngaged)
+
+    let followed = WindowOverlay.desiredRevealActions(
+        pointer: CGPoint(x: 130, y: 27),
+        mode: .nearest,
+        nativeFrames: nativeFrames,
+        expandedFrames: expandedFrames,
+        actions: Set(WindowAction.allCases),
+        isEngaged: &isEngaged,
+        selectedAction: &selectedAction
+    )
+    #expect(followed == [.zoom])
+    #expect(isEngaged)
+
+    let left = WindowOverlay.desiredRevealActions(
+        pointer: CGPoint(x: 180, y: 27),
+        mode: .nearest,
+        nativeFrames: nativeFrames,
+        expandedFrames: expandedFrames,
+        actions: Set(WindowAction.allCases),
+        isEngaged: &isEngaged,
+        selectedAction: &selectedAction
+    )
+    #expect(left.isEmpty)
+    #expect(!isEngaged)
+}
+
 @MainActor
 @Test func overlayPressHandlerRunsOnMouseDown() throws {
     let panel = OverlayPanel(action: .zoom)

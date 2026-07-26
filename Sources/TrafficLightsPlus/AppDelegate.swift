@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateController = UpdateController()
     private var tracker: WindowTracker?
     private var dockClickController: DockClickController?
+    private var stageManagerCloseController: StageManagerCloseController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var subscriptions = Set<AnyCancellable>()
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.minimizeWindowFromDock(pid: pid) ?? false
             }
         )
+        stageManagerCloseController = StageManagerCloseController(preferences: preferences)
         configureStatusItem()
         preferences.$language
             .dropFirst()

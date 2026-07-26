@@ -30,6 +30,7 @@ final class WindowOverlay {
     static let zoomMenuHoverDelay = 0.5
     static let zoomMenuClickRecoveryDelay = 0.12
     static let zoomMenuClickRecoveryWindow = 1.0
+    static let closeDismissalDuration = 1.0
     private static let revealDuration = 0.10
 
     let key: AXWindowKey
@@ -67,8 +68,10 @@ final class WindowOverlay {
     private var minimizeRequestGeneration = 0
     private var isMinimizeDismissalInProgress = false
     private var minimizeDismissalStartFrames: [WindowAction: NSRect] = [:]
+    private var closeDismissalDeadline: TimeInterval?
     private var hiddenModeEnabled = true
     private var revealMode = HiddenTrafficLightRevealMode.nearest
+    private var isRevealEngaged = false
     private var presentationProgressByAction = Dictionary(
         uniqueKeysWithValues: WindowAction.allCases.map { ($0, CGFloat.zero) }
     )
@@ -222,6 +225,13 @@ final class WindowOverlay {
         preparedCGFrames
     }
 
+    var panelWindowIDs: Set<CGWindowID> {
+        Set(panels.values.compactMap { panel in
+            guard panel.windowNumber > 0 else { return nil }
+            return CGWindowID(panel.windowNumber)
+        })
+    }
+
     func syncPosition(to currentWindowFrame: CGRect) {
         guard !isSuppressed else { return }
         let delta = CGPoint(
@@ -249,6 +259,13 @@ final class WindowOverlay {
     ) {
         self.hiddenModeEnabled = hiddenModeEnabled
         self.revealMode = revealMode
+        if let closeDismissalDeadline {
+            guard now >= closeDismissalDeadline else {
+                _ = transitionToHiddenState(.hidden)
+                return
+            }
+            self.closeDismissalDeadline = nil
+        }
         guard !isSuppressed, isEligibleForDisplay else {
             _ = transitionToHiddenState(isSuppressed ? .suppressed : .hidden)
             return
@@ -368,35 +385,90 @@ final class WindowOverlay {
 
     private func desiredExpandedActions(mouseLocation: NSPoint) -> Set<WindowAction> {
         guard hiddenModeEnabled else {
+            isRevealEngaged = false
             selectedNearestAction = nil
             return availableActions
         }
-        guard pointerInsideActivationRegion(mouseLocation) else {
-            selectedNearestAction = nil
+
+        return Self.desiredRevealActions(
+            pointer: mouseLocation,
+            mode: revealMode,
+            nativeFrames: appKitNativeControlFrames(actions: availableActions),
+            expandedFrames: appKitControlFrames(actions: availableActions),
+            actions: availableActions,
+            isEngaged: &isRevealEngaged,
+            selectedAction: &selectedNearestAction
+        )
+    }
+
+    static func desiredRevealActions(
+        pointer: CGPoint,
+        mode: HiddenTrafficLightRevealMode,
+        nativeFrames: [WindowAction: CGRect],
+        expandedFrames: [WindowAction: CGRect],
+        actions: Set<WindowAction>,
+        isEngaged: inout Bool,
+        selectedAction: inout WindowAction?
+    ) -> Set<WindowAction> {
+        guard !actions.isEmpty,
+              let nativeRegion = ControlLayout.activationRegion(
+                  controlFrames: nativeFrames,
+                  actions: actions
+              ) else {
+            isEngaged = false
+            selectedAction = nil
             return []
         }
 
-        switch revealMode {
+        if !isEngaged {
+            guard nativeRegion.contains(pointer) else {
+                selectedAction = nil
+                return []
+            }
+            isEngaged = true
+        }
+
+        switch mode {
         case .group:
-            selectedNearestAction = nil
-            return ControlLayout.revealActions(
-                mode: .group,
-                pointer: mouseLocation,
-                controlFrames: appKitControlFrames(actions: availableActions),
-                actions: availableActions,
-                currentAction: nil
+            selectedAction = nil
+            let retentionFrames: [WindowAction: CGRect] = Dictionary(
+                uniqueKeysWithValues: actions.compactMap { action -> (WindowAction, CGRect)? in
+                    guard let nativeFrame = nativeFrames[action],
+                          let expandedFrame = expandedFrames[action] else { return nil }
+                    return (action, nativeFrame.union(expandedFrame))
+                }
             )
-        case .nearest:
-            let frames = appKitControlFrames(actions: availableActions)
-            let actions = ControlLayout.revealActions(
-                mode: .nearest,
-                pointer: mouseLocation,
-                controlFrames: frames,
-                actions: availableActions,
-                currentAction: selectedNearestAction
-            )
-            selectedNearestAction = actions.first
+            guard let retentionRegion = ControlLayout.activationRegion(
+                controlFrames: retentionFrames,
+                actions: actions
+            ), retentionRegion.contains(pointer) else {
+                isEngaged = false
+                return []
+            }
             return actions
+
+        case .nearest:
+            if nativeRegion.contains(pointer) {
+                selectedAction = ControlLayout.nearestAction(
+                    to: pointer,
+                    controlFrames: nativeFrames,
+                    actions: actions,
+                    currentAction: selectedAction
+                )
+            }
+
+            guard let selectedAction,
+                  actions.contains(selectedAction),
+                  let nativeFrame = nativeFrames[selectedAction],
+                  let expandedFrame = expandedFrames[selectedAction],
+                  nativeFrame.union(expandedFrame)
+                      .insetBy(dx: -ControlLayout.activationPadding, dy: -ControlLayout.activationPadding)
+                      .contains(pointer) else {
+                isEngaged = false
+                selectedAction = nil
+                return []
+            }
+            return [selectedAction]
         }
     }
 
@@ -417,22 +489,22 @@ final class WindowOverlay {
 
     private func resetPresentationProgress() {
         for action in WindowAction.allCases { presentationProgressByAction[action] = 0 }
+        isRevealEngaged = false
         interactiveActions.removeAll(keepingCapacity: true)
         lastDesiredActions.removeAll(keepingCapacity: true)
-    }
-
-    private func pointerInsideActivationRegion(_ mouseLocation: NSPoint) -> Bool {
-        let frames = appKitControlFrames(actions: availableActions)
-        guard let region = ControlLayout.activationRegion(
-            controlFrames: frames,
-            actions: availableActions
-        ) else { return false }
-        return region.contains(mouseLocation)
     }
 
     private func appKitControlFrames(actions: Set<WindowAction>) -> [WindowAction: CGRect] {
         Dictionary(uniqueKeysWithValues: actions.compactMap { action in
             guard let cgFrame = preparedCGFrames[action], let frame = appKitFrame(for: cgFrame) else { return nil }
+            return (action, frame)
+        })
+    }
+
+    private func appKitNativeControlFrames(actions: Set<WindowAction>) -> [WindowAction: CGRect] {
+        Dictionary(uniqueKeysWithValues: actions.compactMap { action in
+            guard let cgFrame = nativeCGFrame(for: action),
+                  let frame = appKitFrame(for: cgFrame) else { return nil }
             return (action, frame)
         })
     }
@@ -670,7 +742,11 @@ final class WindowOverlay {
                 performZoom(using: button, delay: zoomActionDelay)
                 return
             }
+            if Self.shouldDismissImmediately(behavior: behavior) {
+                beginCloseDismissal()
+            }
             if AXUIElementPerformAction(button, kAXPressAction as CFString) != .success {
+                cancelCloseDismissal()
                 NSSound.beep()
             }
             return
@@ -682,7 +758,11 @@ final class WindowOverlay {
         }
         switch behavior {
         case .quitApplication:
-            if !application.terminate() { NSSound.beep() }
+            beginCloseDismissal()
+            if !application.terminate() {
+                cancelCloseDismissal()
+                NSSound.beep()
+            }
         case .hideApplication:
             if !application.hide() { NSSound.beep() }
         case .doNothing:
@@ -690,6 +770,20 @@ final class WindowOverlay {
         case .closeWindow, .minimizeWindow, .zoomWindow:
             break
         }
+    }
+
+    static func shouldDismissImmediately(behavior: ButtonBehavior) -> Bool {
+        behavior == .closeWindow || behavior == .quitApplication
+    }
+
+    private func beginCloseDismissal() {
+        closeDismissalDeadline = ProcessInfo.processInfo.systemUptime + Self.closeDismissalDuration
+        _ = transitionToHiddenState(.hidden)
+    }
+
+    private func cancelCloseDismissal() {
+        closeDismissalDeadline = nil
+        lastPresentationUpdate = 0
     }
 
     private func performZoom(using button: AXUIElement, delay: TimeInterval) {

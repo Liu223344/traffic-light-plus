@@ -43,6 +43,7 @@ final class Preferences: ObservableObject {
         static let hiddenTrafficLightRevealMode = "hiddenTrafficLightRevealMode"
         static let showInFullScreen = "showInFullScreen"
         static let dockClickMinimizesActiveWindow = "dockClickMinimizesActiveWindow"
+        static let stageManagerCloseButtonsEnabled = "stageManagerCloseButtonsEnabled"
         static let quitOnCloseEnabled = "quitOnCloseEnabled"
         static let closeBehavior = "closeButtonBehavior"
         static let minimizeBehavior = "minimizeButtonBehavior"
@@ -90,6 +91,10 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(dockClickMinimizesActiveWindow, forKey: Key.dockClickMinimizesActiveWindow) }
     }
 
+    @Published var stageManagerCloseButtonsEnabled: Bool {
+        didSet { defaults.set(stageManagerCloseButtonsEnabled, forKey: Key.stageManagerCloseButtonsEnabled) }
+    }
+
     @Published var quitOnCloseEnabled: Bool {
         didSet { defaults.set(quitOnCloseEnabled, forKey: Key.quitOnCloseEnabled) }
     }
@@ -131,6 +136,7 @@ final class Preferences: ObservableObject {
             Key.hiddenTrafficLightRevealMode: HiddenTrafficLightRevealMode.nearest.rawValue,
             Key.showInFullScreen: false,
             Key.dockClickMinimizesActiveWindow: true,
+            Key.stageManagerCloseButtonsEnabled: true,
             Key.quitOnCloseEnabled: true,
             Key.closeBehavior: ButtonBehavior.closeWindow.rawValue,
             Key.minimizeBehavior: ButtonBehavior.minimizeWindow.rawValue,
@@ -152,6 +158,7 @@ final class Preferences: ObservableObject {
         showInFullScreen = false
         defaults.set(false, forKey: Key.showInFullScreen)
         dockClickMinimizesActiveWindow = defaults.bool(forKey: Key.dockClickMinimizesActiveWindow)
+        stageManagerCloseButtonsEnabled = defaults.bool(forKey: Key.stageManagerCloseButtonsEnabled)
         quitOnCloseEnabled = defaults.bool(forKey: Key.quitOnCloseEnabled)
         closeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.closeBehavior) ?? "") ?? .closeWindow
         minimizeBehavior = ButtonBehavior(rawValue: defaults.string(forKey: Key.minimizeBehavior) ?? "") ?? .minimizeWindow

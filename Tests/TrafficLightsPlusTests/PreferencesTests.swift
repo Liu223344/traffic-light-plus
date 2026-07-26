@@ -22,6 +22,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(preferences.hiddenTrafficLightRevealMode == .nearest)
         #expect(!preferences.showInFullScreen)
         #expect(preferences.dockClickMinimizesActiveWindow)
+        #expect(preferences.stageManagerCloseButtonsEnabled)
         #expect(preferences.quitOnCloseEnabled)
         #expect(preferences.closeBehavior == .closeWindow)
         #expect(preferences.minimizeBehavior == .minimizeWindow)
@@ -36,8 +37,10 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
     #expect(AppLocalization.string(.hiddenTrafficLights, language: .simplifiedChinese) == "隐藏式红绿灯（推荐）")
     #expect(AppLocalization.string(.hiddenTrafficLights, language: .english) == "Hidden Traffic Lights (Recommended)")
     #expect(AppLocalization.string(.dockClickMinimize, language: .simplifiedChinese) == "Dock 栏最小化")
-    #expect(AppLocalization.string(.dockClickMinimize, language: .english) == "Dock Click to Minimize")
-    #expect(AppLocalization.string(.quitOnCloseEnabled, language: .simplifiedChinese) == "关闭时退出应用")
+        #expect(AppLocalization.string(.dockClickMinimize, language: .english) == "Dock Click to Minimize")
+        #expect(AppLocalization.string(.stageManagerCloseButtons, language: .simplifiedChinese) == "台前调度关闭按钮")
+        #expect(AppLocalization.string(.stageManagerCloseButtons, language: .english) == "Stage Manager Close Buttons")
+        #expect(AppLocalization.string(.quitOnCloseEnabled, language: .simplifiedChinese) == "关闭时退出应用")
     #expect(AppLocalization.string(.quitOnCloseEnabled, language: .english) == "Quit Apps on Close")
     #expect(AppLocalization.string(.menuBarIconVisible, language: .simplifiedChinese) == "显示菜单栏图标")
     #expect(AppLocalization.string(.menuBarIconVisible, language: .english) == "Show Menu Bar Icon")
@@ -145,6 +148,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         preferences.hiddenTrafficLightsEnabled = false
         preferences.hiddenTrafficLightRevealMode = .group
         preferences.dockClickMinimizesActiveWindow = false
+        preferences.stageManagerCloseButtonsEnabled = false
         preferences.quitOnCloseEnabled = false
         preferences.closeBehavior = .quitApplication
         preferences.minimizeBehavior = .hideApplication
@@ -165,6 +169,7 @@ private func withDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
         #expect(restored.hiddenTrafficLightRevealMode == .group)
         #expect(!restored.showInFullScreen)
         #expect(!restored.dockClickMinimizesActiveWindow)
+        #expect(!restored.stageManagerCloseButtonsEnabled)
         #expect(!restored.quitOnCloseEnabled)
         #expect(restored.closeBehavior == .quitApplication)
         #expect(restored.minimizeBehavior == .hideApplication)

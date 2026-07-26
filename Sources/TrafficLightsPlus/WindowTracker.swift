@@ -37,9 +37,10 @@ private final class ObservedApplication {
     }
 }
 
-private struct CGWindowRecord {
+struct CGWindowRecord {
     let id: CGWindowID
     let pid: pid_t
+    let layer: Int
     let bounds: CGRect
     let title: String
 }
@@ -352,7 +353,7 @@ final class WindowTracker {
 
     private func refreshVisibility() {
         let records = cgWindowRecords()
-        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let overlayWindowIDs = Set(overlays.values.flatMap(\.panelWindowIDs))
         let mouseLocation = NSEvent.mouseLocation
         var shown = 0
 
@@ -368,7 +369,7 @@ final class WindowTracker {
                 for: overlay,
                 above: targetIndex,
                 in: records,
-                ownPID: ownPID
+                ignoring: overlayWindowIDs
             )
             overlay.updatePresentation(
                 availableActions: visibleActions,
@@ -385,7 +386,7 @@ final class WindowTracker {
         guard preferences.enabled, AXIsProcessTrusted(), !overlays.isEmpty else { return }
         let records = cgWindowRecords()
         let indicesByID = Dictionary(uniqueKeysWithValues: records.enumerated().map { ($0.element.id, $0.offset) })
-        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let overlayWindowIDs = Set(overlays.values.flatMap(\.panelWindowIDs))
         let mouseLocation = NSEvent.mouseLocation
 
         for overlay in overlays.values {
@@ -410,7 +411,7 @@ final class WindowTracker {
                 for: overlay,
                 above: targetIndex,
                 in: records,
-                ownPID: ownPID
+                ignoring: overlayWindowIDs
             )
             overlay.updatePresentation(
                 availableActions: visibleActions,
@@ -425,23 +426,40 @@ final class WindowTracker {
         for overlay: WindowOverlay,
         above targetIndex: Int,
         in records: [CGWindowRecord],
-        ownPID: pid_t
+        ignoring windowIDs: Set<CGWindowID>
     ) -> Set<WindowAction> {
-        let coveringFrames = records[..<targetIndex]
-            .filter { $0.pid != ownPID }
-            .map(\.bounds)
+        let coveringFrames = Self.coveringFrames(
+            above: targetIndex,
+            in: records,
+            ignoring: windowIDs
+        )
         return ControlLayout.unobscuredActions(
             controlFrames: overlay.controlFrames,
             coveringFrames: coveringFrames
         )
     }
 
+    static func coveringFrames(
+        above targetIndex: Int,
+        in records: [CGWindowRecord],
+        ignoring windowIDs: Set<CGWindowID>
+    ) -> [CGRect] {
+        guard records.indices.contains(targetIndex) else { return [] }
+        return records[..<targetIndex]
+            .filter { !windowIDs.contains($0.id) }
+            .map(\.bounds)
+    }
+
     private func matchingRecordIndex(for overlay: WindowOverlay, in records: [CGWindowRecord]) -> Int? {
         if let windowID = overlay.cgWindowID,
-           let boundIndex = records.firstIndex(where: { $0.id == windowID && $0.pid == overlay.key.pid }) {
+           let boundIndex = records.firstIndex(where: {
+               $0.id == windowID && $0.pid == overlay.key.pid && $0.layer == 0
+           }) {
             return boundIndex
         }
-        let candidates = records.enumerated().filter { $0.element.pid == overlay.key.pid }
+        let candidates = records.enumerated().filter {
+            $0.element.pid == overlay.key.pid && $0.element.layer == 0
+        }
         return candidates.min { lhs, rhs in
             matchScore(record: lhs.element, overlay: overlay) < matchScore(record: rhs.element, overlay: overlay)
         }.flatMap { matchScore(record: $0.element, overlay: overlay) < 24 ? $0.offset : nil }
@@ -463,7 +481,8 @@ final class WindowTracker {
             kCGNullWindowID
         ) as? [[String: Any]] else { return [] }
         return list.compactMap { info in
-            guard (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+            guard let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue,
                   let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   let dictionary = info[kCGWindowBounds as String] as? [String: NSNumber],
@@ -472,14 +491,28 @@ final class WindowTracker {
                   let width = dictionary["Width"]?.doubleValue,
                   let height = dictionary["Height"]?.doubleValue,
                   case let bounds = CGRect(x: x, y: y, width: width, height: height),
-                  bounds.width > 40, bounds.height > 40 else { return nil }
+                  Self.shouldIncludeWindowRecord(
+                      layer: layer,
+                      alpha: alpha,
+                      bounds: bounds
+                  ) else { return nil }
             return CGWindowRecord(
                 id: id,
                 pid: pid,
+                layer: layer,
                 bounds: bounds,
                 title: info[kCGWindowName as String] as? String ?? ""
             )
         }
+    }
+
+    static func shouldIncludeWindowRecord(layer: Int, alpha: Double, bounds: CGRect) -> Bool {
+        let dockWindowLevel = Int(CGWindowLevelForKey(.dockWindow))
+        return layer >= 0
+            && layer < dockWindowLevel
+            && alpha > 0.01
+            && bounds.width > 40
+            && bounds.height > 40
     }
 
     private func scheduleRefresh() {

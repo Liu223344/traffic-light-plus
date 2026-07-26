@@ -20,6 +20,9 @@
 "fullscreen.in_development" = "Show in Full-Screen Windows (In Development)";
 "dock_click.title" = "Dock Click to Minimize";
 "dock_click.help" = "Minimize the active window when you click its Dock icon again";
+"stage_manager_close.title" = "Stage Manager Close Buttons";
+"stage_manager_close.help" = "Reveal a close button near the top-left corner of Stage Manager thumbnails";
+"stage_manager_close.action" = "Close Stage Manager Window";
 "software_updates.title" = "Software Updates";
 "software_updates.automatic_check" = "Automatically Check for Updates";
 "software_updates.automatic_download" = "Automatically Download Updates";

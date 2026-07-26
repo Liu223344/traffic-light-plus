@@ -245,6 +245,17 @@ struct SettingsView: View {
                     .accessibilityLabel(localized(.dockClickMinimize))
             }
 
+            HStack {
+                Text(localized(.stageManagerCloseButtons))
+                    .font(.headline)
+                Spacer()
+                Toggle("", isOn: $preferences.stageManagerCloseButtonsEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help(localized(.stageManagerCloseButtonsHelp))
+                    .accessibilityLabel(localized(.stageManagerCloseButtons))
+            }
+
             quitOnCloseApplications
 
             softwareUpdates

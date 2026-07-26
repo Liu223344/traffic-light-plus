@@ -20,6 +20,9 @@
 "fullscreen.in_development" = "在全屏窗口中显示（开发中）";
 "dock_click.title" = "Dock 栏最小化";
 "dock_click.help" = "再次点击当前应用的 Dock 图标时最小化窗口";
+"stage_manager_close.title" = "台前调度关闭按钮";
+"stage_manager_close.help" = "靠近台前调度缩略图左上角时显示关闭按钮";
+"stage_manager_close.action" = "关闭台前调度窗口";
 "software_updates.title" = "软件更新";
 "software_updates.automatic_check" = "自动检查更新";
 "software_updates.automatic_download" = "自动下载更新";

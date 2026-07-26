@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.5.0 - 2026-07-26
+
+- Added optional close buttons that reveal near the top-left corner of Stage Manager thumbnails.
+- Close the frontmost window in a Stage Manager group without activating the group first.
+- Kept Stage Manager thumbnails stable while hovering their close buttons by using mouse-transparent panels and isolated click interception.
+- Prevented Preview, Quick Look, system panels, and transparent windows from incorrectly leaving enlarged traffic lights visible above foreground content.
+- Restricted hidden traffic-light activation to native control regions while keeping legitimately revealed controls interactive.
+- Hide enlarged traffic lights immediately when their configured action closes a window or quits an application.
+
 ## 1.4.1 - 2026-07-22
 
 - Added a persistent option to hide the Traffic Lights+ menu bar icon while keeping Settings recoverable by reopening the app.

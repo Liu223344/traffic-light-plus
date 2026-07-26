@@ -32,6 +32,7 @@ Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗
 - 窗口拖动期间以 120 Hz 同步位置，并实时处理按钮级遮挡。
 - 最小化前快速缩小并隐藏覆盖按钮，避免覆盖层留在系统动画中。
 - 再次点击当前前台应用的 Dock 图标时，可最小化该应用的当前窗口。
+- 鼠标靠近台前调度缩略图左上角时显示关闭按钮，直接关闭分组中最上层的窗口。
 - 可分别把红、黄、绿按钮设置为关闭窗口、退出应用、最小化、缩放、隐藏应用或无操作。
 - 支持所有可见普通窗口和多显示器；全屏窗口支持仍在开发中。
 - 设置界面支持简体中文和英文，可在应用内即时切换。
@@ -65,6 +66,7 @@ Traffic Lights+ 启动后常驻菜单栏。设置页可以调整：
 - 独立的“关闭时退出应用”开关和应用名单，关闭放大红绿灯后仍然生效；
 - “在全屏窗口中显示（开发中）”当前不可勾选。
 - 独立的 Dock 开关：再次点击应用图标时最小化当前窗口，无需开启放大红绿灯。
+- 独立的台前调度关闭按钮开关：在缩略图左上角直接关闭当前最上层窗口。
 - “语言 / Language”可在简体中文和英文之间即时切换。
 - “显示菜单栏图标”可单独关闭；隐藏图标后可重新打开应用进入设置。
 - “软件更新”可分别控制自动检查、自动下载，也可立即手动检查。
@@ -157,6 +159,7 @@ Public builds currently use ad-hoc code signing and are not notarized by Apple. 
 - Window positions are synchronized at 120 Hz while dragging, with real-time per-control occlusion handling.
 - Overlay controls quickly shrink and disappear before minimization to avoid remaining visible during the system animation.
 - Click the current frontmost application's Dock icon again to minimize its active window.
+- Reveal close buttons near the top-left of Stage Manager thumbnails to close the frontmost window in a group directly.
 - Configure the red, yellow, and green controls independently to close a window, quit an app, minimize, zoom, hide an app, or do nothing.
 - Supports all visible standard windows and multiple displays. Full-screen window support is still in development.
 - The settings interface supports Simplified Chinese and English with immediate in-app switching.
@@ -190,6 +193,7 @@ Traffic Lights+ remains available in the menu bar after launch. Its settings inc
 - an independent quit-on-close switch and application list that also work with enlarged traffic lights disabled;
 - a disabled **Show in full-screen windows (In development)** option.
 - an independent Dock switch that minimizes the active window when its application icon is clicked again, without requiring enlarged traffic lights.
+- an independent Stage Manager option that adds a close button to each thumbnail for its frontmost window.
 - a **语言 / Language** selector for switching immediately between Simplified Chinese and English.
 - a **Show Menu Bar Icon** toggle; reopen the app to access Settings after hiding it.
 - a **Software Updates** section for automatic checks, automatic downloads, and immediate manual checks.
