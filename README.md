@@ -7,9 +7,48 @@
 
 [简体中文](#简体中文) | [English](#english)
 
+## 功能预览 / Feature Preview
+
+<p align="center">
+  <a href="docs/images/enlarged-traffic-lights.jpg">
+    <img src="docs/images/enlarged-traffic-lights.jpg" alt="放大的 macOS 红绿灯按钮 / Enlarged macOS traffic lights" width="960">
+  </a>
+  <br>
+  <sub>放大红绿灯 / Enlarged traffic lights</sub>
+</p>
+
+<p align="center">
+  <a href="docs/images/stage-manager-close-button.jpg">
+    <img src="docs/images/stage-manager-close-button.jpg" alt="台前调度缩略图关闭按钮 / Stage Manager thumbnail close button" width="960">
+  </a>
+  <br>
+  <sub>台前调度缩略图关闭按钮 / Stage Manager thumbnail close button</sub>
+</p>
+
 ## 简体中文
 
 Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗口左上角的关闭、最小化和缩放按钮放大，让它们更容易看清和点击。它不修改系统文件、不注入其他进程，也不需要关闭 SIP。
+
+### 界面预览
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/images/settings-zh-hans-top.png">
+        <img src="docs/images/settings-zh-hans-top.png" alt="Traffic Lights+ 中文设置界面上半部分">
+      </a>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/images/settings-zh-hans-bottom.png">
+        <img src="docs/images/settings-zh-hans-bottom.png" alt="Traffic Lights+ 中文设置界面下半部分">
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub>设置上半部分</sub></td>
+    <td align="center"><sub>设置下半部分</sub></td>
+  </tr>
+</table>
 
 ### 下载
 
@@ -137,6 +176,27 @@ Traffic Lights+ 采用 [MIT License](LICENSE)。
 ## English
 
 Traffic Lights+ is a native macOS menu bar utility that enlarges the close, minimize, and zoom controls in the top-left corner of other application windows, making them easier to see and click. It does not modify system files, inject code into other processes, or require System Integrity Protection to be disabled.
+
+### Interface Preview
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/images/settings-en-top.png">
+        <img src="docs/images/settings-en-top.png" alt="Top section of the Traffic Lights+ English settings interface">
+      </a>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/images/settings-en-bottom.png">
+        <img src="docs/images/settings-en-bottom.png" alt="Bottom section of the Traffic Lights+ English settings interface">
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Settings, top section</sub></td>
+    <td align="center"><sub>Settings, bottom section</sub></td>
+  </tr>
+</table>
 
 ### Download
 
