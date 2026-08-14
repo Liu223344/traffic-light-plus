@@ -125,6 +125,91 @@ import Testing
     #expect(WindowOverlay.zoomActionDelay(menuTriggeredAt: 11, now: 10) == 0)
 }
 
+@Test func nativeZoomClickRequiresAPriorMenuAndNoInFlightClick() {
+    #expect(!WindowOverlay.shouldUseNativeZoomClick(
+        menuWasRequested: false,
+        isClickInFlight: false
+    ))
+    #expect(WindowOverlay.shouldUseNativeZoomClick(
+        menuWasRequested: true,
+        isClickInFlight: false
+    ))
+    #expect(!WindowOverlay.shouldUseNativeZoomClick(
+        menuWasRequested: true,
+        isClickInFlight: true
+    ))
+}
+
+@Test func nativeZoomClickPointRequiresFiniteNonEmptyGeometry() {
+    let targetWindow = CGRect(x: 80, y: 20, width: 800, height: 600)
+    let displays = [CGRect(x: 0, y: 0, width: 1920, height: 1080)]
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: CGRect(x: 100, y: 40, width: 14, height: 14),
+        targetWindowFrame: targetWindow,
+        displayFrames: displays
+    ) == CGPoint(x: 107, y: 47))
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: .zero,
+        targetWindowFrame: targetWindow,
+        displayFrames: displays
+    ) == nil)
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: CGRect(x: CGFloat.infinity, y: 40, width: 14, height: 14),
+        targetWindowFrame: targetWindow,
+        displayFrames: displays
+    ) == nil)
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: CGRect(x: 100, y: CGFloat.nan, width: 14, height: 14),
+        targetWindowFrame: targetWindow,
+        displayFrames: displays
+    ) == nil)
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: CGRect(
+            x: CGFloat.greatestFiniteMagnitude,
+            y: 40,
+            width: CGFloat.greatestFiniteMagnitude,
+            height: 14
+        ),
+        targetWindowFrame: CGRect(
+            x: 0,
+            y: 0,
+            width: CGFloat.greatestFiniteMagnitude,
+            height: 600
+        ),
+        displayFrames: displays
+    ) == nil)
+}
+
+@Test func nativeZoomClickPointMustStayInsideTheTargetWindowAndAnActiveDisplay() {
+    let button = CGRect(x: 100, y: 40, width: 14, height: 14)
+    let display = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: button,
+        targetWindowFrame: CGRect(x: 200, y: 20, width: 800, height: 600),
+        displayFrames: [display]
+    ) == nil)
+    #expect(WindowOverlay.nativeZoomClickPoint(
+        in: button,
+        targetWindowFrame: CGRect(x: 80, y: 20, width: 800, height: 600),
+        displayFrames: [CGRect(x: 2000, y: 0, width: 1920, height: 1080)]
+    ) == nil)
+}
+
+@Test func nativeZoomClickEventsPressReleaseAndRestoreThePointer() throws {
+    let clickPoint = CGPoint(x: 107, y: 47)
+    let pointerPoint = CGPoint(x: 320, y: 240)
+    let events = try #require(WindowOverlay.nativeZoomClickEvents(
+        at: clickPoint,
+        restoringPointerTo: pointerPoint
+    ))
+
+    #expect(events.count == 3)
+    #expect(events.map(\.type) == [.leftMouseDown, .leftMouseUp, .mouseMoved])
+    #expect(events.map(\.location) == [clickPoint, clickPoint, pointerPoint])
+    #expect(events[0].getIntegerValueField(.mouseEventClickState) == 1)
+    #expect(events[1].getIntegerValueField(.mouseEventClickState) == 1)
+}
+
 @Test func closingBehaviorsDismissTheOverlayBeforePerformingTheirAction() {
     #expect(WindowOverlay.closeDismissalDuration == 1.0)
     #expect(WindowOverlay.shouldDismissImmediately(behavior: .closeWindow))
