@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.5.1 - 2026-09-20
+
+- Removed continuous 120 Hz window tracking; window movement now uses system notifications with periodic reconciliation.
+- Wake hidden traffic lights on pointer proximity, with cached activation regions and coalesced pointer events.
+- Run 60 Hz presentation updates only while controls expand or collapse, stopping animation timers when idle.
+- Avoid redundant redraws when control appearance and interaction state have not changed.
+- Prevent a newly triggered reveal from jumping ahead after an idle interval.
+
 ## 1.5.0 - 2026-07-26
 
 - Added optional close buttons that reveal near the top-left corner of Stage Manager thumbnails.

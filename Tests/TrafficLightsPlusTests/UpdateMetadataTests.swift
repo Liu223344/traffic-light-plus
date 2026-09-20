@@ -4,8 +4,8 @@ import Testing
 
 @Test func updateMetadataEnablesChecksAndDownloadsByDefault() throws {
     let info = try sourceInfoPlist()
-    #expect(info["CFBundleShortVersionString"] as? String == "1.5.0")
-    #expect(info["CFBundleVersion"] as? String == "7")
+    #expect(info["CFBundleShortVersionString"] as? String == "1.5.1")
+    #expect(info["CFBundleVersion"] as? String == "8")
     #expect(info["SUEnableAutomaticChecks"] as? Bool == true)
     #expect(info["SUAutomaticallyUpdate"] as? Bool == true)
     #expect((info["SUPublicEDKey"] as? String)?.isEmpty == false)

@@ -68,7 +68,7 @@ Traffic Lights+ 是一个原生 macOS 菜单栏工具，可以把其他应用窗
 - 圆形按钮支持自定义间距，也可切换为左上角贴边方块。
 - “隐藏式红绿灯”支持靠近时放大“整组”或仅放大“单个”最近按钮。
 - 在当前活跃窗口中悬停配置为“缩放窗口”的放大按钮，可打开 macOS 原生缩放与平铺菜单。
-- 窗口拖动期间以 120 Hz 同步位置，并实时处理按钮级遮挡。
+- 窗口位置通过系统通知更新；隐藏式红绿灯由鼠标接近触发，仅在展开、收起期间刷新动画，避免持续高频追踪。
 - 最小化前快速缩小并隐藏覆盖按钮，避免覆盖层留在系统动画中。
 - 再次点击当前前台应用的 Dock 图标时，可最小化该应用的当前窗口。
 - 鼠标靠近台前调度缩略图左上角时显示关闭按钮，直接关闭分组中最上层的窗口。
@@ -216,7 +216,7 @@ Public builds currently use ad-hoc code signing and are not notarized by Apple. 
 - Custom spacing for circular controls, with an optional left-edge square style.
 - Hidden traffic lights can reveal the entire group or only the nearest individual control.
 - Hover over an enlarged control configured to zoom the active window to open the native macOS zoom and tiling menu.
-- Window positions are synchronized at 120 Hz while dragging, with real-time per-control occlusion handling.
+- Window positions update through system notifications. Hidden traffic lights react to pointer proximity and refresh animations only while expanding or collapsing, without continuous high-frequency tracking.
 - Overlay controls quickly shrink and disappear before minimization to avoid remaining visible during the system animation.
 - Click the current frontmost application's Dock icon again to minimize its active window.
 - Reveal close buttons near the top-left of Stage Manager thumbnails to close the frontmost window in a group directly.

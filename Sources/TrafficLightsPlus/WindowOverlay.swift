@@ -79,6 +79,9 @@ final class WindowOverlay {
     private var interactiveActions = Set<WindowAction>()
     private var lastDesiredActions = Set<WindowAction>()
     private var lastPresentationUpdate = 0.0
+    private var presentationTimer: Timer?
+    private var pointerActivationRegion: CGRect?
+    private var pointerActivationRegionIsValid = false
     private(set) var presentationState = OverlayPresentationState.hidden
 
     init(key: AXWindowKey) {
@@ -94,8 +97,48 @@ final class WindowOverlay {
         }
     }
 
+    deinit {
+        presentationTimer?.invalidate()
+    }
+
+    // Hidden windows only need an occlusion query when the pointer reaches their
+    // native controls. Visible/animating controls must also handle pointer exit.
+    func needsPointerUpdate(at location: CGPoint) -> Bool {
+        guard !isSuppressed, isEligibleForDisplay else { return false }
+        if presentationState != .hidden || presentationTimer != nil { return true }
+        if !pointerActivationRegionIsValid {
+            pointerActivationRegion = ControlLayout.activationRegion(
+                controlFrames: appKitNativeControlFrames(actions: preparedActions),
+                actions: preparedActions
+            )
+            pointerActivationRegionIsValid = true
+        }
+        return pointerActivationRegion?.contains(location) == true
+    }
+
+    private func startPresentationTimer() {
+        guard presentationTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.updatePresentation(
+                availableActions: self.availableActions,
+                mouseLocation: NSEvent.mouseLocation,
+                hiddenModeEnabled: self.hiddenModeEnabled,
+                revealMode: self.revealMode
+            )
+        }
+        presentationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func stopPresentationTimer() {
+        presentationTimer?.invalidate()
+        presentationTimer = nil
+    }
+
     @discardableResult
     func update(preferences: Preferences, recalibrateNativeCenters: Bool = true) -> Bool {
+        pointerActivationRegionIsValid = false
         guard let frame = axFrame(of: window), frame.width > 100, frame.height > 60 else {
             isEligibleForDisplay = false
             hide()
@@ -240,6 +283,7 @@ final class WindowOverlay {
         )
         guard abs(delta.x) > 0.01 || abs(delta.y) > 0.01 else { return }
 
+        pointerActivationRegionIsValid = false
         windowFrame.origin = currentWindowFrame.origin
 
         for action in preparedActions {
@@ -280,7 +324,11 @@ final class WindowOverlay {
         let desiredActions = isMinimizeDismissalInProgress
             ? Set<WindowAction>()
             : desiredExpandedActions(mouseLocation: mouseLocation)
-        let elapsed = lastPresentationUpdate > 0 ? min(max(now - lastPresentationUpdate, 0), 0.05) : 0
+        // An idle interval is not animation time: start a newly triggered reveal
+        // from its current size instead of jumping halfway through the animation.
+        let startingAnimation = presentationTimer == nil && desiredActions != lastDesiredActions
+        let elapsed = !startingAnimation && lastPresentationUpdate > 0
+            ? min(max(now - lastPresentationUpdate, 0), 0.05) : 0
         lastPresentationUpdate = now
 
         for action in WindowAction.allCases {
@@ -309,6 +357,26 @@ final class WindowOverlay {
 
         updatePresentationState(desiredActions: desiredActions)
         renderPresentation(desiredActions: desiredActions, mouseLocation: mouseLocation)
+        if Self.needsPresentationAnimation(
+            progress: presentationProgressByAction,
+            availableActions: availableActions,
+            desiredActions: desiredActions
+        ) {
+            startPresentationTimer()
+        } else {
+            stopPresentationTimer()
+        }
+    }
+
+    static func needsPresentationAnimation(
+        progress: [WindowAction: CGFloat],
+        availableActions: Set<WindowAction>,
+        desiredActions: Set<WindowAction>
+    ) -> Bool {
+        availableActions.contains { action in
+            let target: CGFloat = desiredActions.contains(action) ? 1 : 0
+            return (progress[action] ?? 0) != target
+        }
     }
 
     private func renderPresentation(
@@ -546,6 +614,7 @@ final class WindowOverlay {
     }
 
     private func transitionToHiddenState(_ hiddenState: OverlayPresentationState) -> Bool {
+        stopPresentationTimer()
         guard presentationState != hiddenState || panels.values.contains(where: \.isVisible) else {
             return false
         }
@@ -816,6 +885,7 @@ final class WindowOverlay {
         }
         lastPresentationUpdate = ProcessInfo.processInfo.systemUptime
         presentationState = .collapsing
+        startPresentationTimer()
 
         // Start the native minimize on the first display frame so the window and
         // its overlays animate away together instead of in two visible phases.

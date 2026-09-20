@@ -12,6 +12,7 @@ import Testing
     #expect(panel.overlayView.frame.origin == .zero)
     #expect(panel.overlayView.frame.size == NSSize(width: 40, height: 40))
     #expect(panel.level == .floating)
+    #expect(panel.acceptsMouseMovedEvents)
 }
 
 @MainActor
@@ -260,4 +261,25 @@ import Testing
         )
         panel.overlayView.cacheDisplay(in: panel.overlayView.bounds, to: representation)
     }
+}
+
+@Test func revealAnimationRunsOnlyUntilRequestedControlsReachTheirTargets() {
+    // A reveal needs its first frame even though all controls are still hidden.
+    #expect(WindowOverlay.needsPresentationAnimation(
+        progress: [.close: 0], availableActions: [.close], desiredActions: [.close]
+    ))
+    #expect(!WindowOverlay.needsPresentationAnimation(
+        progress: [.close: 1], availableActions: [.close], desiredActions: [.close]
+    ))
+    // Leaving midway through expansion must keep the collapse animation running.
+    #expect(WindowOverlay.needsPresentationAnimation(
+        progress: [.close: 0.5], availableActions: [.close], desiredActions: []
+    ))
+    #expect(!WindowOverlay.needsPresentationAnimation(
+        progress: [.close: 0], availableActions: [.close], desiredActions: []
+    ))
+    // An occluded control must not keep an animation timer alive.
+    #expect(!WindowOverlay.needsPresentationAnimation(
+        progress: [.close: 0.5], availableActions: [], desiredActions: [.close]
+    ))
 }

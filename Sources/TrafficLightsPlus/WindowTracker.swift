@@ -51,7 +51,8 @@ final class WindowTracker {
     private var overlays: [AXWindowKey: WindowOverlay] = [:]
     private var applications: [pid_t: ObservedApplication] = [:]
     private var timer: Timer?
-    private var positionTimer: Timer?
+    private var pointerMonitors: [Any] = []
+    private var positionUpdateScheduled = false
     private var subscriptions = Set<AnyCancellable>()
     private var workspaceObservers: [NSObjectProtocol] = []
     private var refreshScheduled = false
@@ -76,19 +77,22 @@ final class WindowTracker {
         }
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in self?.refreshAll() }
-        // Sample WindowServer continuously at 120 Hz so overlay position and
-        // per-button occlusion follow the compositor during interactive drags.
-        positionTimer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
-            self?.syncWindowPositions()
-        }
-        positionTimer?.tolerance = 0
-        RunLoop.main.add(positionTimer!, forMode: .common)
+        timer?.tolerance = 0.08
+        // Pointer events wake hidden controls; there is no continuous position poll.
+        let pointerEvents: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: pointerEvents, handler: { [weak self] _ in
+            self?.handlePointerMovement()
+        }) { pointerMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: pointerEvents, handler: { [weak self] event in
+            self?.handlePointerMovement()
+            return event
+        }) { pointerMonitors.append(monitor) }
         refreshAll()
     }
 
     deinit {
         timer?.invalidate()
-        positionTimer?.invalidate()
+        pointerMonitors.forEach { NSEvent.removeMonitor($0) }
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach(center.removeObserver)
     }
@@ -178,11 +182,10 @@ final class WindowTracker {
         case kAXMovedNotification:
             // AX window geometry trails the compositor during an interactive drag.
             // Pull the current WindowServer frame instead of applying a stale AX frame.
-            if preferences.enabled { syncWindowPositions() }
+            if preferences.enabled { schedulePositionUpdate() }
         case kAXResizedNotification:
             if preferences.enabled, let overlay = overlays[key] {
                 _ = overlay.update(preferences: preferences, recalibrateNativeCenters: true)
-                syncWindowPositions()
                 refreshVisibility()
             } else if preferences.enabled {
                 scheduleRefresh()
@@ -380,6 +383,24 @@ final class WindowTracker {
             if !visibleActions.isEmpty { shown += 1 }
         }
         logger.debug("Visible overlays: \(shown, privacy: .public) / \(self.overlays.count, privacy: .public)")
+    }
+
+    private func handlePointerMovement() {
+        guard preferences.enabled, preferences.hiddenTrafficLightsEnabled else { return }
+        let location = NSEvent.mouseLocation
+        guard overlays.values.contains(where: { $0.needsPointerUpdate(at: location) }) else { return }
+        schedulePositionUpdate()
+    }
+
+    private func schedulePositionUpdate() {
+        guard !positionUpdateScheduled else { return }
+        positionUpdateScheduled = true
+        // Coalesce high-rate mouse/AX events without keeping an idle timer alive.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) { [weak self] in
+            guard let self else { return }
+            self.positionUpdateScheduled = false
+            self.syncWindowPositions()
+        }
     }
 
     private func syncWindowPositions() {

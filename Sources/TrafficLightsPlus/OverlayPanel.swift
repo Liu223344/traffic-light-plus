@@ -10,18 +10,19 @@ final class OverlayButtonView: NSView {
     let action: WindowAction
     var behavior: ButtonBehavior {
         didSet {
+            guard behavior != oldValue else { return }
             updateLocalizedMetadata()
             needsDisplay = true
         }
     }
     var language: AppLanguage = .simplifiedChinese {
-        didSet { updateLocalizedMetadata() }
+        didSet { if language != oldValue { updateLocalizedMetadata() } }
     }
-    var style: ControlStyle = .macOS { didSet { needsDisplay = true } }
-    var controlSize: CGFloat = 28 { didSet { needsDisplay = true } }
-    var isControlEnabled = true { didSet { needsDisplay = true } }
-    var isWindowActive = false { didSet { needsDisplay = true } }
-    var isGroupHovered = false { didSet { needsDisplay = true } }
+    var style: ControlStyle = .macOS { didSet { if style != oldValue { needsDisplay = true } } }
+    var controlSize: CGFloat = 28 { didSet { if controlSize != oldValue { needsDisplay = true } } }
+    var isControlEnabled = true { didSet { if isControlEnabled != oldValue { needsDisplay = true } } }
+    var isWindowActive = false { didSet { if isWindowActive != oldValue { needsDisplay = true } } }
+    var isGroupHovered = false { didSet { if isGroupHovered != oldValue { needsDisplay = true } } }
     var actionHandler: ((WindowAction) -> Void)?
     var hoverHandler: ((Bool) -> Void)?
     var pressHandler: ((WindowAction) -> Void)?
@@ -37,6 +38,7 @@ final class OverlayButtonView: NSView {
     }
 
     func resetInteractionState() {
+        guard isHovered || isPressed || isGroupHovered else { return }
         isHovered = false
         isPressed = false
         isGroupHovered = false
@@ -247,6 +249,7 @@ final class OverlayPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
+        acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
         animationBehavior = .none
     }
