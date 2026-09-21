@@ -123,19 +123,19 @@ import Testing
     ) == 0)
 }
 
-@Test func minimizeDismissalShrinksToZeroBeforeNativeAnimationCompletes() {
+@Test func frameScalingShrinksToZeroAroundItsCenter() {
     let startFrame = CGRect(x: 100, y: 80, width: 28, height: 20)
     let halfway = ControlLayout.nextPresentationProgress(
         current: 1,
-        elapsed: WindowOverlay.minimizeDismissDuration / 2,
+        elapsed: 0.045 / 2,
         expanding: false,
-        duration: WindowOverlay.minimizeDismissDuration
+        duration: 0.045
     )
     let hidden = ControlLayout.nextPresentationProgress(
         current: 1,
-        elapsed: WindowOverlay.minimizeDismissDuration,
+        elapsed: 0.045,
         expanding: false,
-        duration: WindowOverlay.minimizeDismissDuration
+        duration: 0.045
     )
 
     #expect(abs(halfway - 0.5) < 0.0001)
@@ -151,11 +151,6 @@ import Testing
     #expect(hiddenFrame.height == 0)
     #expect(hiddenFrame.midX == startFrame.midX)
     #expect(hiddenFrame.midY == startFrame.midY)
-}
-
-@Test func nativeMinimizeStartsWhileOverlayDismissalIsRunning() {
-    #expect(WindowOverlay.minimizeActionDelay > 0)
-    #expect(WindowOverlay.minimizeActionDelay < WindowOverlay.minimizeDismissDuration)
 }
 
 @Test func dismissalFrameScalingClampsProgress() {

@@ -97,7 +97,10 @@ final class OverlayButtonView: NSView {
             isPressed = false
             needsDisplay = true
         }
-        guard isControlEnabled, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        guard isPressed, isControlEnabled,
+              bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        // Consume the press before invoking code that can hide this panel.
+        isPressed = false
         actionHandler?(action)
     }
 

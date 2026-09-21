@@ -38,6 +38,7 @@ export SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/.build/ModuleCache"
 swift build -c release \
     --triple "$TRIPLE" \
     --scratch-path "$SCRATCH" \
+    --disable-automatic-resolution \
     --disable-sandbox \
     --cache-path "$ROOT/.build/SwiftPMCache"
 

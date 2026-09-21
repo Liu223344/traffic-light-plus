@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.5.2 - 2026-09-21
+
+- Zoom buttons that showed the native zoom menu now perform a real native click after the menu closes, so clicks on an enlarged zoom control are no longer swallowed by the menu tracking session.
+- Hide enlarged traffic-light overlays before minimizing so no colored block remains visible during the native animation.
+- Prevent duplicate minimize actions and suppress the system beep caused by ambiguous Accessibility return values.
+
 ## 1.5.1 - 2026-09-20
 
 - Removed continuous 120 Hz window tracking; window movement now uses system notifications with periodic reconciliation.

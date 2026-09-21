@@ -24,12 +24,34 @@ enum OverlayPresentationState {
     case suppressed
 }
 
+// Tickets prevent a queued menu completion from clicking after cancellation.
+struct NativeZoomClickRequest {
+    private(set) var generation = 0
+    private(set) var isInFlight = false
+
+    mutating func begin() -> Int? {
+        guard !isInFlight else { return nil }
+        generation += 1
+        isInFlight = true
+        return generation
+    }
+
+    func isCurrent(_ ticket: Int) -> Bool { isInFlight && generation == ticket }
+
+    mutating func cancel() {
+        isInFlight = false
+        generation += 1
+    }
+}
+
 final class WindowOverlay {
-    static let minimizeActionDelay = 1.0 / 120.0
-    static let minimizeDismissDuration = 0.045
     static let zoomMenuHoverDelay = 0.5
     static let zoomMenuClickRecoveryDelay = 0.12
     static let zoomMenuClickRecoveryWindow = 1.0
+    static let nativeZoomClickPassThroughDuration = 0.10
+    // After a native zoom click the pointer still rests on the restored control;
+    // suppress the hover menu briefly so it cannot pop again unprompted.
+    static let nativeZoomMenuSuppressionInterval = 1.5
     static let closeDismissalDuration = 1.0
     private static let revealDuration = 0.10
 
@@ -57,6 +79,12 @@ final class WindowOverlay {
     private var zoomMenuWorkItem: DispatchWorkItem?
     private var hoveredZoomMenuAction: WindowAction?
     private var zoomMenuTriggeredAt: TimeInterval?
+    private var zoomMenuWasRequested = false
+    private var nativeZoomRequest = NativeZoomClickRequest()
+    private var isNativeZoomClickInFlight: Bool { nativeZoomRequest.isInFlight }
+    private var nativeZoomPanelsHidden = false
+    private var nativeZoomTimeout: DispatchWorkItem?
+    private var nativeZoomClickCompletedAt: TimeInterval?
     private lazy var zoomAccessibilityQueue = DispatchQueue(
         label: "app.trafficlightsplus.mac.zoom-action.\(key.pid)",
         qos: .userInitiated
@@ -67,7 +95,7 @@ final class WindowOverlay {
     )
     private var minimizeRequestGeneration = 0
     private var isMinimizeDismissalInProgress = false
-    private var minimizeDismissalStartFrames: [WindowAction: NSRect] = [:]
+    private var minimizePendingUntil: TimeInterval = 0
     private var closeDismissalDeadline: TimeInterval?
     private var hiddenModeEnabled = true
     private var revealMode = HiddenTrafficLightRevealMode.nearest
@@ -336,14 +364,7 @@ final class WindowOverlay {
                 presentationProgressByAction[action] = 0
                 continue
             }
-            if isMinimizeDismissalInProgress {
-                presentationProgressByAction[action] = ControlLayout.nextPresentationProgress(
-                    current: presentationProgressByAction[action] ?? 0,
-                    elapsed: elapsed,
-                    expanding: false,
-                    duration: Self.minimizeDismissDuration
-                )
-            } else if !hiddenModeEnabled {
+            if !hiddenModeEnabled {
                 presentationProgressByAction[action] = 1
             } else {
                 presentationProgressByAction[action] = ControlLayout.nextPresentationProgress(
@@ -383,6 +404,8 @@ final class WindowOverlay {
         desiredActions: Set<WindowAction>,
         mouseLocation: NSPoint
     ) {
+        // Keep the native controls exposed until the posted click is delivered.
+        guard !nativeZoomPanelsHidden else { return }
         var nextVisibleActions = Set<WindowAction>()
         var pointerInsideButton = false
 
@@ -398,11 +421,7 @@ final class WindowOverlay {
             }
 
             let frame: NSRect?
-            if isMinimizeDismissalInProgress {
-                frame = minimizeDismissalStartFrames[action].map {
-                    ControlLayout.frameScaledAroundCenter($0, progress: progress)
-                }
-            } else if let nativeFrame = nativeCGFrame(for: action),
+            if let nativeFrame = nativeCGFrame(for: action),
                       let targetFrame = preparedCGFrames[action] {
                 let cgFrame = ControlLayout.interpolatedFrame(
                     from: nativeFrame,
@@ -420,12 +439,16 @@ final class WindowOverlay {
             }
 
             if panel.frame != frame { panel.setFrame(frame, display: true) }
-            panel.alphaValue = isMinimizeDismissalInProgress ? progress : 1
-            panel.ignoresMouseEvents = isMinimizeDismissalInProgress || !desiredActions.contains(action)
+            panel.alphaValue = 1
+            panel.ignoresMouseEvents = isNativeZoomClickInFlight
+                || isMinimizeDismissalInProgress
+                || !desiredActions.contains(action)
             if !panel.isVisible { panel.orderFrontRegardless() }
             nextVisibleActions.insert(action)
 
-            let pointerInside = desiredActions.contains(action) && frame.contains(mouseLocation)
+            let pointerInside = !isNativeZoomClickInFlight
+                && desiredActions.contains(action)
+                && frame.contains(mouseLocation)
             panel.overlayView.setPointerInside(pointerInside)
             pointerInsideButton = pointerInsideButton || pointerInside
         }
@@ -614,12 +637,11 @@ final class WindowOverlay {
     }
 
     private func transitionToHiddenState(_ hiddenState: OverlayPresentationState) -> Bool {
+        if isNativeZoomClickInFlight { finishNativeZoomClick(restorePresentation: false) }
         stopPresentationTimer()
         guard presentationState != hiddenState || panels.values.contains(where: \.isVisible) else {
             return false
         }
-        isMinimizeDismissalInProgress = false
-        minimizeDismissalStartFrames.removeAll(keepingCapacity: true)
         resetPresentationProgress()
         selectedNearestAction = nil
         lastPresentationUpdate = 0
@@ -630,6 +652,8 @@ final class WindowOverlay {
     }
 
     func suppressUntilRestored() {
+        isMinimizeDismissalInProgress = false
+        minimizePendingUntil = 0
         minimizeRequestGeneration += 1
         isSuppressed = true
         isEligibleForDisplay = false
@@ -639,19 +663,22 @@ final class WindowOverlay {
     @discardableResult
     func reconcileMinimizedState(_ minimized: Bool) -> Bool {
         if minimized {
-            if !isSuppressed { suppressUntilRestored() }
+            suppressUntilRestored()
             return false
         }
+        // AX can still report the pre-animation state while minimizing.
+        guard !isMinimizeDismissalInProgress,
+              ProcessInfo.processInfo.systemUptime >= minimizePendingUntil else { return false }
         if isSuppressed { restoreFromSuppression() }
         return true
     }
 
     func restoreFromSuppression() {
+        minimizePendingUntil = 0
         minimizeRequestGeneration += 1
         isSuppressed = false
         isEligibleForDisplay = true
         isMinimizeDismissalInProgress = false
-        minimizeDismissalStartFrames.removeAll(keepingCapacity: true)
         resetPresentationProgress()
         selectedNearestAction = nil
         lastPresentationUpdate = 0
@@ -715,9 +742,16 @@ final class WindowOverlay {
         }
     }
 
+    private func isWithinNativeZoomMenuSuppression() -> Bool {
+        guard let completedAt = nativeZoomClickCompletedAt else { return false }
+        return ProcessInfo.processInfo.systemUptime - completedAt < Self.nativeZoomMenuSuppressionInterval
+    }
+
     private func scheduleZoomMenu(for action: WindowAction) {
         cancelZoomMenuRequest(clearTriggeredState: true)
-        guard interactiveActions.contains(action),
+        guard !isNativeZoomClickInFlight,
+              !isWithinNativeZoomMenuSuppression(),
+              interactiveActions.contains(action),
               let panel = panels[action],
               let zoomButton = currentButton(for: .zoom) else { return }
 
@@ -753,9 +787,9 @@ final class WindowOverlay {
 
             self.zoomMenuWorkItem = nil
             self.zoomMenuTriggeredAt = ProcessInfo.processInfo.systemUptime
+            self.zoomMenuWasRequested = true
             // Some Web App windows block AXShowMenu until the menu is dismissed.
-            // Keep it off the click queue so a subsequent AXPress can dismiss the
-            // menu and still reach the native zoom button immediately.
+            // The native click queue uses this call as its completion barrier.
             let menuQueue = self.zoomMenuAccessibilityQueue
             menuQueue.async {
                 _ = AXUIElementPerformAction(zoomButton, kAXShowMenuAction as CFString)
@@ -791,6 +825,63 @@ final class WindowOverlay {
         return zoomMenuClickRecoveryDelay
     }
 
+    static func shouldUseNativeZoomClick(
+        menuWasRequested: Bool,
+        isClickInFlight: Bool
+    ) -> Bool {
+        menuWasRequested && !isClickInFlight
+    }
+
+    static func nativeZoomClickPoint(
+        in buttonFrame: CGRect,
+        targetWindowFrame: CGRect,
+        displayFrames: [CGRect]
+    ) -> CGPoint? {
+        guard isFiniteNonEmpty(buttonFrame),
+              isFiniteNonEmpty(targetWindowFrame) else { return nil }
+        let clickPoint = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
+        guard clickPoint.x.isFinite,
+              clickPoint.y.isFinite,
+              targetWindowFrame.contains(clickPoint),
+              displayFrames.contains(where: {
+                  isFiniteNonEmpty($0) && $0.contains(clickPoint)
+              }) else { return nil }
+        return clickPoint
+    }
+
+    static func nativeZoomClickEvents(
+        at clickPoint: CGPoint,
+        restoringPointerTo pointerPoint: CGPoint
+    ) -> [CGEvent]? {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let mouseDown = CGEvent(
+                  mouseEventSource: source,
+                  mouseType: .leftMouseDown,
+                  mouseCursorPosition: clickPoint,
+                  mouseButton: .left
+              ),
+              let mouseUp = CGEvent(
+                  mouseEventSource: source,
+                  mouseType: .leftMouseUp,
+                  mouseCursorPosition: clickPoint,
+                  mouseButton: .left
+              ),
+              let restorePointer = CGEvent(
+                  mouseEventSource: source,
+                  mouseType: .mouseMoved,
+                  mouseCursorPosition: pointerPoint,
+                  mouseButton: .left
+              ) else { return nil }
+
+        let flags = CGEventSource.flagsState(.combinedSessionState)
+        mouseDown.flags = flags
+        mouseUp.flags = flags
+        restorePointer.flags = flags
+        mouseDown.setIntegerValueField(.mouseEventClickState, value: 1)
+        mouseUp.setIntegerValueField(.mouseEventClickState, value: 1)
+        return [mouseDown, mouseUp, restorePointer]
+    }
+
     private func perform(_ action: WindowAction) {
         let behavior = configuredBehaviors[action] ?? ButtonBehavior.defaultBehavior(for: action)
         let zoomActionDelay = behavior == .zoomWindow
@@ -802,6 +893,14 @@ final class WindowOverlay {
         cancelZoomMenuRequest(clearTriggeredState: true)
 
         if let nativeAction = behavior.nativeWindowAction {
+            if behavior == .zoomWindow, zoomMenuWasRequested {
+                guard Self.shouldUseNativeZoomClick(
+                    menuWasRequested: true,
+                    isClickInFlight: isNativeZoomClickInFlight
+                ) else { return }
+                performNativeZoomClick()
+                return
+            }
             guard let button = currentButton(for: nativeAction) else { NSSound.beep(); return }
             if behavior == .minimizeWindow {
                 performMinimize(using: button)
@@ -863,77 +962,140 @@ final class WindowOverlay {
         }
     }
 
-    private func performMinimize(using button: AXUIElement) {
-        let actionsToRestore = interactiveActions
-        minimizeRequestGeneration += 1
-        let generation = minimizeRequestGeneration
-        minimizeDismissalStartFrames = Dictionary(uniqueKeysWithValues: visibleActions.compactMap { action in
-            guard let panel = panels[action], panel.isVisible else { return nil }
-            return (action, panel.frame)
-        })
-        for action in minimizeDismissalStartFrames.keys {
-            presentationProgressByAction[action] = 1
+    private func performNativeZoomClick() {
+        guard !isSuppressed, isEligibleForDisplay,
+              let generation = nativeZoomRequest.begin() else { return }
+        // Background controls remain clickable: the final hit test, rather than
+        // application focus, decides whether this native button can receive input.
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.nativeZoomRequest.isCurrent(generation) else { return }
+            self.finishNativeZoomClick(failureStage: "menu-timeout")
         }
-        isMinimizeDismissalInProgress = true
-        selectedNearestAction = nil
-        interactiveActions.removeAll(keepingCapacity: true)
-        hoverResetWorkItem?.cancel()
-        hoverResetWorkItem = nil
-        panels.values.forEach {
-            $0.ignoresMouseEvents = true
-            $0.overlayView.resetInteractionState()
-        }
-        lastPresentationUpdate = ProcessInfo.processInfo.systemUptime
-        presentationState = .collapsing
-        startPresentationTimer()
+        nativeZoomTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: timeout)
 
-        // Start the native minimize on the first display frame so the window and
-        // its overlays animate away together instead of in two visible phases.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimizeActionDelay) { [weak self] in
-            guard let self, generation == self.minimizeRequestGeneration else { return }
-            self.pressMinimizeButton(
-                button,
-                restoring: actionsToRestore,
-                generation: generation
-            )
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.minimizeDismissDuration) { [weak self] in
-            guard let self, generation == self.minimizeRequestGeneration else { return }
-            self.finishMinimizeDismissal()
-        }
-    }
-
-    private func pressMinimizeButton(
-        _ button: AXUIElement,
-        restoring actionsToRestore: Set<WindowAction>,
-        generation: Int
-    ) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = AXUIElementPerformAction(button, kAXPressAction as CFString)
-            guard result != .success else { return }
-
+        // AXShowMenu may block until its menu closes. Never send a delayed click
+        // after a timeout, window hide, or a newer request has invalidated it.
+        zoomMenuAccessibilityQueue.async { [weak self] in
             DispatchQueue.main.async { [weak self] in
-                guard let self, generation == self.minimizeRequestGeneration else { return }
-                self.restoreFromSuppression()
-                self.availableActions = actionsToRestore.intersection(self.preparedActions)
-                for action in actionsToRestore { self.presentationProgressByAction[action] = 1 }
-                self.interactiveActions = actionsToRestore
-                self.presentationState = .visible
-                self.renderPresentation(
-                    desiredActions: actionsToRestore,
-                    mouseLocation: NSEvent.mouseLocation
-                )
-                NSSound.beep()
+                guard let self, self.isNativeZoomClickInFlight,
+                      self.nativeZoomRequest.isCurrent(generation) else { return }
+                guard !self.isSuppressed, self.isEligibleForDisplay else {
+                    self.finishNativeZoomClick(failureStage: "inactive-window")
+                    return
+                }
+                self.nativeZoomPanelsHidden = true
+                self.panels.values.forEach {
+                    $0.ignoresMouseEvents = true
+                    $0.overlayView.resetInteractionState()
+                    $0.orderOut(nil)
+                }
+                // Let WindowServer remove our panels before AX hit testing.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                    guard let self, self.nativeZoomRequest.isCurrent(generation) else { return }
+                    self.postNativeZoomClick(generation: generation)
+                }
             }
         }
     }
 
-    private func finishMinimizeDismissal() {
-        isMinimizeDismissalInProgress = false
-        isSuppressed = true
-        isEligibleForDisplay = false
-        hide()
+    private func postNativeZoomClick(generation: Int) {
+        guard isNativeZoomClickInFlight, nativeZoomRequest.isCurrent(generation) else { return }
+        guard !isSuppressed, isEligibleForDisplay,
+              let button = copyFreshButton(for: .zoom).button,
+              copyAttribute(kAXEnabledAttribute as CFString, from: button) ?? true,
+              let buttonFrame = axFrame(of: button),
+              let targetWindowFrame = axFrame(of: window),
+              let clickPoint = Self.nativeZoomClickPoint(
+                  in: buttonFrame,
+                  targetWindowFrame: targetWindowFrame,
+                  displayFrames: Self.activeDisplayFrames()
+              ) else {
+            finishNativeZoomClick(failureStage: "target-validation")
+            return
+        }
+        // Valid geometry alone is insufficient: a sheet, menu, or floating
+        // window may cover the button while the target remains the main window.
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.2)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(clickPoint.x), Float(clickPoint.y), &hit) == .success,
+              let hit, CFEqual(hit, button) else {
+            finishNativeZoomClick(failureStage: "hit-test")
+            return
+        }
+        guard let pointerPoint = CGEvent(source: nil)?.location,
+              let events = Self.nativeZoomClickEvents(at: clickPoint, restoringPointerTo: pointerPoint) else {
+            finishNativeZoomClick(failureStage: "event-creation")
+            return
+        }
+        events.forEach { $0.post(tap: .cghidEventTap) }
+        logger.notice("Native zoom click posted pid=\(self.key.pid, privacy: .public)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.nativeZoomClickPassThroughDuration) { [weak self] in
+            guard let self, self.nativeZoomRequest.isCurrent(generation) else { return }
+            // The window is zooming right now; restoring the panels with their
+            // pre-zoom geometry would leave a stale control floating over the
+            // changed window. Let resize/move notifications re-present instead.
+            self.finishNativeZoomClick(restorePresentation: false)
+        }
+    }
+
+    private func finishNativeZoomClick(failureStage: String? = nil, restorePresentation: Bool = true) {
+        guard isNativeZoomClickInFlight else { return }
+        nativeZoomRequest.cancel()
+        nativeZoomPanelsHidden = false
+        nativeZoomTimeout?.cancel()
+        nativeZoomTimeout = nil
+        nativeZoomClickCompletedAt = ProcessInfo.processInfo.systemUptime
+        lastPresentationUpdate = 0
+        if restorePresentation {
+            // There is no continuous position timer. Restore input now,
+            // including on failure, rather than waiting for the next scan.
+            updatePresentation(
+                availableActions: availableActions,
+                mouseLocation: NSEvent.mouseLocation,
+                hiddenModeEnabled: hiddenModeEnabled,
+                revealMode: revealMode
+            )
+        }
+        if let failureStage {
+            logger.error("Native zoom click cancelled: \(failureStage, privacy: .public)")
+            NSSound.beep()
+        }
+    }
+
+    private func performMinimize(using button: AXUIElement) {
+        guard !isSuppressed, !isMinimizeDismissalInProgress else { return }
+        beginMinimizeDismissal()
+        let generation = minimizeRequestGeneration
+        let targetWindow = window
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            // Some apps complete the action but return an AX error. Check the
+            // resulting state instead of retrying a press or restoring a ghost.
+            var value: CFTypeRef?
+            let stateResult = AXUIElementCopyAttributeValue(
+                targetWindow, kAXMinimizedAttribute as CFString, &value
+            )
+            let minimized = stateResult == .success && (value as? Bool == true)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == self.minimizeRequestGeneration else { return }
+                self.isMinimizeDismissalInProgress = false
+                if result != .success && !minimized {
+                    self.logger.error("Minimize AX action returned \(result.rawValue); waiting for window state refresh")
+                }
+                // Leave panels hidden. Periodic AX reconciliation restores them
+                // if minimizing failed, or after the window is deminiaturized.
+            }
+        }
+    }
+
+    func beginMinimizeDismissal() {
+        // Remove independent overlay windows before the system captures/animates
+        // the target window, and reject duplicate requests during the transition.
+        suppressUntilRestored()
+        isMinimizeDismissalInProgress = true
+        minimizePendingUntil = ProcessInfo.processInfo.systemUptime + 1.0
     }
 
     private func isBehaviorEnabled(
@@ -970,6 +1132,16 @@ final class WindowOverlay {
         return targetButtons[action]
     }
 
+    private func copyFreshButton(
+        for action: WindowAction
+    ) -> (button: AXUIElement?, error: AXError) {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(window, attribute(for: action), &value)
+        guard result == .success else { return (nil, result) }
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return (nil, .failure) }
+        return (unsafeBitCast(value, to: AXUIElement.self), .success)
+    }
+
     private func axFrame(of element: AXUIElement) -> CGRect? {
         guard let position: AXValue = copyAttribute(kAXPositionAttribute as CFString, from: element),
               let size: AXValue = copyAttribute(kAXSizeAttribute as CFString, from: element) else { return nil }
@@ -991,6 +1163,23 @@ final class WindowOverlay {
         guard AXUIElementCopyActionNames(element, &actions) == .success,
               let actionNames = actions as? [String] else { return false }
         return actionNames.contains(action as String)
+    }
+
+    private static func isFiniteNonEmpty(_ frame: CGRect) -> Bool {
+        !frame.isEmpty
+            && frame.origin.x.isFinite
+            && frame.origin.y.isFinite
+            && frame.width.isFinite
+            && frame.height.isFinite
+    }
+
+    private static func activeDisplayFrames() -> [CGRect] {
+        NSScreen.screens.compactMap { screen in
+            guard let number = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")
+            ] as? NSNumber else { return nil }
+            return CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
+        }
     }
 
     private func targetWindowIsActive() -> Bool {
