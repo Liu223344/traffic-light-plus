@@ -27,24 +27,24 @@ import Testing
     #expect(enlarged.midY == native.midY)
 }
 
-@Test func spacingAdjustmentKeepsCloseCenteredAndMovesFollowingButtons() {
+@Test func spacingAdjustmentSpreadsSymmetricallyAroundMinimize() {
     let nativeCenter = CGPoint(x: 100, y: 20)
 
     #expect(ControlLayout.centerByAdjustingSystemSpacing(
         nativeCenter,
         action: .close,
         adjustment: 6
-    ) == nativeCenter)
+    ) == CGPoint(x: 94, y: 20))
     #expect(ControlLayout.centerByAdjustingSystemSpacing(
         nativeCenter,
         action: .minimize,
         adjustment: 6
-    ) == CGPoint(x: 106, y: 20))
+    ) == nativeCenter)
     #expect(ControlLayout.centerByAdjustingSystemSpacing(
         nativeCenter,
         action: .zoom,
         adjustment: 6
-    ) == CGPoint(x: 112, y: 20))
+    ) == CGPoint(x: 106, y: 20))
 }
 
 @Test func occlusionHidesOnlyTheCoveredTrafficLight() {

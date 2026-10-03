@@ -28,7 +28,9 @@ struct ControlLayout {
     ) -> CGPoint {
         let index = displayOrder(for: .macOS).firstIndex(of: action) ?? 0
         return CGPoint(
-            x: nativeCenter.x + CGFloat(index) * adjustment,
+            // Spread symmetrically around the minimize button so the group stays
+            // centered on the native controls when the spacing changes.
+            x: nativeCenter.x + CGFloat(index - 1) * adjustment,
             y: nativeCenter.y
         )
     }
