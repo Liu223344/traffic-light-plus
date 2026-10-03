@@ -206,9 +206,11 @@ final class WindowOverlay {
         let controlSize = ControlLayout.effectiveSize(preferred: preferences.size)
         var buttons: [WindowAction: AXUIElement] = [:]
         var frames: [WindowAction: CGRect] = [:]
+        let visibleButtons = visibleNativeButtons()
 
         for action in WindowAction.allCases {
             guard let button: AXUIElement = copyAttribute(attribute(for: action), from: window) else { continue }
+            if let visibleButtons, !visibleButtons.contains(where: { CFEqual($0, button) }) { continue }
             buttons[action] = button
             if let nativeFrame = axFrame(of: button),
                recalibrateNativeCenters || nativeFrameOffsets[action] == nil {
@@ -1122,6 +1124,17 @@ final class WindowOverlay {
         case .minimize: return kAXMinimizeButtonAttribute as CFString
         case .zoom: return kAXZoomButtonAttribute as CFString
         }
+    }
+
+    /// Windows such as settings panels hide their minimize/zoom buttons, but the window still
+    /// reports them through the button attributes. Hidden buttons are left out of the window's
+    /// children, so only buttons found there are treated as visible. Returns nil (no filtering)
+    /// when even the close button is not a direct child, since that app nests its controls.
+    private func visibleNativeButtons() -> [AXUIElement]? {
+        guard let children: [AXUIElement] = copyAttribute(kAXChildrenAttribute as CFString, from: window),
+              let close: AXUIElement = copyAttribute(kAXCloseButtonAttribute as CFString, from: window),
+              children.contains(where: { CFEqual($0, close) }) else { return nil }
+        return children
     }
 
     private func currentButton(for action: WindowAction) -> AXUIElement? {
